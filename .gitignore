@@ -1,0 +1,39 @@
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Editors / IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local environment & secrets
+.env
+.env.*
+*.key
+*.pem
+credentials.json
+
+# Logs & temp
+*.log
+tmp/
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Workspace/tool artifacts (never commit these)
+.gitconfig
+.gitconfig_system_empty
+.project_root
