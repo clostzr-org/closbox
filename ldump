@@ -1,0 +1,28 @@
+#!/data/data/com.termux/files/usr/bin/bash
+export cfub=/data/data/com.termux/files/usr/bin
+export slm="su -lmM -c"
+export e="echo -e"
+export d0=$(dirname $0)
+export b0=$(basename $0)
+export red="\e[31m"
+export grn="\e[32m"
+export blu="\e[34m"
+export yel="\e[33m"
+export prp="\e[35m"
+export cyn="\e[36m"
+export nll="\e[0m"
+usg(){
+	$e "links.dump"
+	$e "usage: $b0 <file>"
+}
+if [[ -z "$1" ]]; then usg; exit; fi
+if [[ "$1" = "t" ]]; then
+export arg="$(tcg)"
+else
+export arg="$1"
+fi
+case ${arg##*.} in
+htm|html) $e "file:$arg\nfile.extension:$fx\nhtml.file: $arg"
+links -dump "$arg" > "${arg%.*}.txt";;
+*) $e "file:$arg\nfile.extension:$fx\nunsupported.file: $arg";;
+esac

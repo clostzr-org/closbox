@@ -1,0 +1,204 @@
+#!/data/data/com.termux/files/usr/bin/python
+import time
+start_time = time.time()
+from ansicolors import *
+
+import os, sys
+
+if  os.path.islink(sys.argv[0]):
+    spath = os.readlink(sys.argv[0])
+else:
+    spath = os.path.abspath(sys.argv[0])
+   
+sdn   = os.path.dirname(spath)
+sbn   = os.path.basename(spath)
+sne   = os.path.splitext(sbn)[0]
+sdbne = f'{sdn}/{sne}'
+home  = '/data/data/com.termux/files/home'
+hbak  = home + '/bak'
+hbin  = home + '/bin'
+hsym  = home + '/symlink'
+
+if  not hbin in sys.path:
+    sys.path.append(hbin)
+   
+import osl; osl.osl(spath)
+for i in osl.info:
+    print(f'{i}')
+
+args  = sys.argv[1:]
+jargs = ' '.join(args).strip()
+
+import inspect
+def usg():
+    usg = inspect.cleandoc(f'''
+    alias: {fgr} make-script{frs}
+ function: {fyl} make a script with some environment preset in it{frs}
+    usage: {frs} {sbn} [-py|-sh] [filename]{frs}
+    ''')
+    print(f'{usg}')
+    sys.exit()
+
+#insert_your_codes_here
+header_py = inspect.cleandoc(f'''
+#!/data/data/com.termux/files/usr/bin/python
+import time
+start_time = time.time()
+import os, sys
+home  = '/data/data/com.termux/files/home'
+hbak  = home + '/bak'
+hbin  = home + '/bin'
+if  not hbin in sys.path:
+    sys.path.append(hbin)
+from ansicolors import *
+spath = sys.argv[0]
+if  os.path.islink(spath):
+    spath = os.readlink(spath)
+sdn   = os.path.dirname(spath)
+sbn   = os.path.basename(spath)
+sne   = os.path.splitext(sbn)[0]
+sdbne = f'{{sdn}}/{{sne}}'
+home  = '/data/data/com.termux/files/home'
+hbak  = home + '/bak'
+hbin  = home + '/bin'
+verbose = False
+
+import osl; osl.osl(spath)
+for message in osl.info:
+    print(f'{{message}}')
+
+args  = sys.argv[1:]
+jargs = ' '.join(args).strip()
+
+import inspect
+def usg():
+    usg = inspect.cleandoc(f\'\'\'
+    alias: {{fgr}} {{frs}}
+ function: {{fyl}} {{frs}}
+    usage: {{frs}} {{sbn}} [argument]
+    \'\'\')
+    print(f'{{usg}}')
+ 
+#insert_your_codes_here
+
+if  __name__ == '__main__':
+    try:
+      if  sys.argv[1] == '-h':
+          usg()
+          sys.exit()
+    except Exception:
+      pass
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Elapsed time: {{elapsed_time}} seconds")
+''')
+
+def hdsh(src_file, sym_file):
+    header_sh = inspect.cleandoc(f'''
+    #!/data/data/com.termux/files/usr/bin/bash
+    if  [[ ! -d {hsym} ]]; then
+        mkdir {hsym}
+        chmod -R 755 {hsym}
+    fi
+    
+    if  [[ ! -s {sym_file} ]]; then
+        symstat="doesnt-exists"
+        ln -sv {src_file} {sym_file}
+        if  [[ -s {sym_file} ]]; then
+            symstat="newly-created"
+            echo -e "symlink created:\\n{sym_file}"
+        else
+            symstat="failed-to-create"
+            echo -e "failed to create symlink:\\n{sym_file}"
+        fi
+    else
+        symstat="exists"
+        #echo -e "symlink exists:\\n{sym_file}"
+    fi
+    
+    bnz=$(basename $0)
+    if  [[ "${{bnz##*.}}" == "{ext}" ]]; then
+        echo -e "source-file : $(readlink {sym_file})"
+        echo -e "symlink-file: {sym_file}"
+        echo -e "symlink-stat: $symstat"
+    fi
+    
+    usage="usage: $(basename $0) [command]"
+    echo -e "$usage"
+       
+    ''')
+    return header_sh
+
+def create(file, ext):
+    base_file = ''.join(file).strip().replace(f'{ext}', '').replace(' ', '_')
+    src_file = f'{hbin}/{base_file}{ext}'
+    sym_file = hsym + '/' + os.path.basename(base_file)
+    hdlang = ''
+    if ext == '.py':
+       header = header_py
+       hdlang = 'python'
+    if ext == '.sh':
+       header = hdsh(src_file, sym_file)
+       hdlang = 'shell'
+    if ext == '.txt':
+       header = ''
+       hdlang = 'text'
+    else:
+       match ext:
+             case ('.py' | '.sh'):
+                  pass
+             case _:             
+                  header = ''
+                  hdlang = ''
+    print(f'header language:\n{hdlang}')
+    print(f'source_file: {src_file}')
+    if os.path.isfile(src_file):
+       os.chmod(src_file, 0o755)
+       os.system(f'micro {src_file}')
+    else:
+       with open(src_file, 'w') as owsf:
+            owsf.write(f'{header}\n')
+       os.chmod(src_file, 0o755)
+       os.system(f'micro {src_file}')
+
+if __name__ == '__main__':
+   #print(f'args: "{args}" ')
+   try:
+      match sys.argv[1]:
+            case ('-h' | '--help'):
+                 usg()
+   except Exception:
+      pass
+   if  len(args) < 1:
+       print(f'args is empty')
+       sys.exit()
+   ext = '.txt'
+   args = sys.argv[1:]
+   for a in args:
+       a = a.lower()
+       if   len(a) < 2:
+            continue
+       if   a.startswith('.'):
+            print(f'length: {len(a)} | current a will be the {fmg}extension{frs} ({a})')
+            match a:
+                  case ('.py'):
+                       ext = a
+                  case ('.sh'):
+                       ext = a
+                  case _:
+                       ext = a
+       elif not a.startswith('.'):
+            print(f'length: {len(a)} | current a will be the {fgr}basename{frs} ({a})')
+            bname = a
+   bnox = bname.rsplit('.', 1)[0]
+   try:
+      ext = '.' + bname.rsplit('.', 1)[1]
+   except Exception:
+      pass
+   cnfrm = input(f'do you wanna create this file: {bnox}{ext}? (y/n): ')
+   if  not cnfrm == 'y':
+       sys.exit()
+   create(bnox, ext)
+   end_time = time.time()
+   elapsed_time = end_time - start_time
+   print(f"Elapsed time: {elapsed_time} seconds")

@@ -1,0 +1,50 @@
+#!/data/data/com.termux/files/usr/bin/python
+import os
+import sys
+
+def osl(*args):
+    """Creates a symbolic link for the given file in the symlink directory.
+
+    Handles cases where the module is imported or run directly from the command line.
+    """
+    info = []  # Initialize info within the function's scope
+    home = os.environ['HOME']
+    symdir = f'{home}/symlink'
+
+    # Determine source path based on context (import vs. command line)
+    if args:
+        source_path = next((arg for arg in args if os.path.isfile(arg)), None)
+    else:
+        source_path = sys.argv[0] if len(sys.argv) > 0 else None
+
+    if not source_path or not source_path.endswith('.py'):
+        info.append("No valid Python source file specified.")
+        return info #return info list
+
+    lpbn = os.path.basename(source_path).rsplit('.', 1)[0]
+    link_path = f'{symdir}/{lpbn}'
+
+    if not os.path.isdir(symdir):
+        os.makedirs(symdir, exist_ok=True) # exist_ok prevents error if dir exists.
+
+    if os.path.exists(link_path):
+        if not os.path.islink(link_path):
+            os.remove(link_path)
+
+    try:
+        os.symlink(source_path, link_path)
+        info.append(f"Symbolic link '{link_path}' created successfully.")
+    except OSError as e:
+        info.append(f"Failed to create symbolic link '{link_path}': {e}")
+    except Exception as e:
+        info.append(f"An unexpected error occurred: {e}")
+
+    return info
+
+
+if __name__ == "__main__":
+    # This block runs only when the module is executed directly (not imported)
+    results = osl(*sys.argv[1:])  # Pass command-line arguments excluding script name
+    for message in results:
+        print(message)
+

@@ -1,0 +1,193 @@
+#!/data/data/com.termux/files/usr/bin/python
+import time
+import os
+import sys
+import csv
+import shutil
+import subprocess
+import xlsxwriter
+
+try:
+     import openpyxl  # For reading .xlsx files
+except Exception:
+     os.system('pip install openpyxl')
+     import openpyxl  # For reading .xlsx files
+
+start_time = time.time()
+
+# Your existing setup code...
+home  = '/data/data/com.termux/files/home'
+hbak  = home + '/bak'
+hbin  = home + '/bin'
+if  not hbin in sys.path:
+    sys.path.append(hbin)
+from ansicolors import *
+
+spath = sys.argv[0]
+if os.path.islink(spath):
+    spath = os.readlink(spath)
+sdn   = os.path.dirname(spath)
+sbn   = os.path.basename(spath)
+sne   = os.path.splitext(sbn)[0]
+sdbne = f'{sdn}/{sne}'
+
+import osl; osl.osl(spath)
+for message in osl.info:
+    print(f'{message}')
+
+args  = sys.argv[1:]
+jargs = ' '.join(args).strip()
+
+import inspect
+def usg():
+    usg = inspect.cleandoc(f'''
+    alias: {fgr} {frs}
+ function: {fyl} {frs}
+    usage: {frs} {sbn} [argument]
+    ''')
+    print(f'{usg}')
+
+# Function to get input path
+def get_input_path():
+    def command_exists(cmd):
+        return shutil.which(cmd) is not None
+
+    if command_exists('tcget'):
+        try:
+            result = subprocess.run(['tcget'], capture_output=True, check=True, text=True)
+            path = result.stdout.strip()
+            if os.path.exists(path):
+                return path
+        except:
+            pass
+    if len(sys.argv) > 1:
+        arg_path = sys.argv[1]
+        if os.path.exists(arg_path):
+            return arg_path
+    user_input = input("Enter a file or directory path: ").strip()
+    if os.path.exists(user_input):
+        return user_input
+    else:
+        print("Path does not exist.")
+        sys.exit()
+
+# Function to convert .xlsx to multiple CSVs
+def excel_to_csvs(xlsx_path):
+    wb = openpyxl.load_workbook(xlsx_path)
+    dir_name = os.path.dirname(xlsx_path)
+    for sheet in wb.worksheets:
+        sheet_name = sheet.title
+        csv_filename = os.path.join(dir_name, f"{sheet_name}.csv")
+        with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            for row in sheet.iter_rows(values_only=True):
+                writer.writerow([cell if cell is not None else '' for cell in row])
+        print(f"Exported sheet '{sheet_name}' to {csv_filename}")
+
+# Main processing
+def main():
+    # Check for special argument '-x2c'
+    if len(sys.argv) > 1 and sys.argv[1] == '-x2c':
+        # Expect a single .xlsx file path
+        if len(sys.argv) < 3:
+            print("Please provide the .xlsx file path after '-x2c'")
+            sys.exit()
+        xlsx_path = sys.argv[2]
+        if not os.path.isfile(xlsx_path) or not xlsx_path.lower().endswith('.xlsx'):
+            print("Invalid .xlsx file path.")
+            sys.exit()
+        excel_to_csvs(xlsx_path)
+        sys.exit()
+
+    # Otherwise, proceed with original logic
+    path = get_input_path()
+
+    # Determine the Excel file name based on the first input file
+    if os.path.isfile(path):
+        base_name = os.path.splitext(os.path.basename(path))[0]
+        excel_path = os.path.join(os.path.dirname(path), f"{base_name}.xlsx")
+    elif os.path.isdir(path):
+        # If directory, use the first .txt or .csv file's name
+        first_file = None
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                ext = os.path.splitext(file)[1].lower()
+                if ext in ['.txt', '.csv']:
+                    first_file = os.path.join(root, file)
+                    break
+            if first_file:
+                break
+        if first_file:
+            base_name = os.path.splitext(os.path.basename(first_file))[0]
+            excel_path = os.path.join(os.path.dirname(first_file), f"{base_name}.xlsx")
+        else:
+            excel_path = os.path.join(os.path.dirname(path), "combined_data.xlsx")
+            print("No .txt or .csv files found, using default name 'combined_data.xlsx'")
+    else:
+        print("Invalid path.")
+        sys.exit()
+
+    # Create a single workbook for all sheets
+    workbook = xlsxwriter.Workbook(excel_path)
+
+    sheet_count = 0  # To generate unique sheet names
+    
+    def convert_files_to_excel(file_path):
+        nonlocal sheet_count
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        sheet_name = f"Sheet{sheet_count+1}_{base_name}"
+        sheet_count += 1
+        worksheet = workbook.add_worksheet(sheet_name)
+    
+        max_col_widths = {}  # Track max width per column for current file
+    
+        try:
+            with open(file_path, 'r', newline='') as csvfile:
+                reader = csv.reader(csvfile)
+                for row_num, row_data in enumerate(reader):
+                    for col_num, cell_data in enumerate(row_data):
+                        worksheet.write(row_num, col_num, cell_data)
+                        # Update max width for this column
+                        cell_length = len(str(cell_data))
+                        if col_num not in max_col_widths or cell_length > max_col_widths[col_num]:
+                            max_col_widths[col_num] = cell_length
+            print(f"Added {file_path} to sheet {sheet_name}")
+        except Exception as e:
+            print(f"Error processing {file_path}: {e}")
+
+        # Set column widths based on max content length for this sheet
+        for col_num, width in max_col_widths.items():
+            worksheet.set_column(col_num, col_num, width + 4)
+
+    if os.path.isfile(path):
+        ext = os.path.splitext(path)[1].lower()
+        if ext in ['.txt', '.csv']:
+            convert_files_to_excel(path)
+        else:
+            print("The file is not a .txt or .csv file.")
+    elif os.path.isdir(path):
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                ext = os.path.splitext(file)[1].lower()
+                if ext in ['.txt', '.csv']:
+                    full_path = os.path.join(root, file)
+                    convert_files_to_excel(full_path)
+    else:
+        print("Invalid path.")
+        sys.exit()
+
+    # Save the overall workbook after processing all files
+    workbook.close()
+    print(f"All files have been combined into {excel_path}")
+
+if __name__ == "__main__":
+    try:
+        if sys.argv[1] == '-h':
+            usg()
+            sys.exit()
+    except:
+        pass
+    main()
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Elapsed time: {elapsed_time:.2f} seconds")

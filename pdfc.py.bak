@@ -1,0 +1,116 @@
+#!/data/data/com.termux/files/usr/bin/python
+import time
+import os
+import sys
+import shutil
+import string
+from tcget import tcget
+
+# Timing start
+start_time = time.time()
+
+# Define paths
+home = '/data/data/com.termux/files/home'
+hbak = home + '/bak'
+hbin = home + '/bin'
+
+# Append to sys.path if needed
+if hbin not in sys.path:
+    sys.path.append(hbin)
+
+from ansicolors import *
+
+# Script path handling
+spath = sys.argv[0]
+if os.path.islink(spath):
+    spath = os.readlink(spath)
+sdn = os.path.dirname(spath)
+sbn = os.path.basename(spath)
+sne = os.path.splitext(sbn)[0]
+sdbne = f'{sdn}/{sne}'
+
+# Initialize variables
+verbose = False
+
+# Call osl for some processing (assuming it's defined elsewhere)
+import osl
+osl.osl(spath)
+for message in osl.info:
+    print(f'{message}')
+
+args = sys.argv[1:]
+jargs = ' '.join(args).strip()
+
+import inspect
+def usg():
+    usg = inspect.cleandoc(f'''
+    alias: {fgr} {frs}
+ function: {fyl} {frs}
+    usage: {frs} {sbn} [argument]
+    ''')
+    print(f'{usg}')
+ 
+#insert_your_codes_here
+import subprocess
+def subp(cmdline):
+    spr = subprocess.run(cmdline.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, text=True, universal_newlines=True); 
+    return {
+    "sout": spr.stdout, "serr": spr.stderr, "sret": spr.returncode
+    }
+
+def cmdc(cmd):
+    try:
+       cmdline = f'{cmd} -v'; 
+       sp = subp(cmdline)
+       print(f'installed: {fgr}{cmd}{frs}')
+    except Exception:
+       cmdline = f'apt install {cmd} -y'; 
+       sp = subp(cmdline)
+       
+    sout = sp["sout"]
+    serr = sp["serr"]
+    sret = sp["sret"]
+    print(f'{fyl}sout{frs}:\n{sout}{frd}serr{frs}:\n{serr}{fmg}sret{frs}:\n{sret}')
+    
+cmdc('ghostscript')
+from tcget import tcget
+
+try:
+   input_pdf = tcget()
+   print(f'input from tcget: {input_pdf}')
+   if  not os.path.isfile(input_pdf):
+       raise Error
+except Exception:
+   try:
+      input_pdf = sys.argv[1]
+   except Exception:
+      input_pdf = input(f'input_pdf: ')
+print(f'input_pdf: {input_pdf}')
+
+if os.path.isfile(input_pdf):
+   print(f'{fgr}input_pdf file exists{frs}')
+   input_ext = input_pdf.rsplit('.', 1)[1]
+   print(f'input_pdf ext: {input_ext}')
+   if not input_ext == 'pdf':
+      print(f'{frd}input file is not a pdf{frs}')
+      sys.exit()
+else:
+   print(f'{frd}input_pdf doesnt exists{frs}')
+   sys.exit()
+   
+output_pdf = input_pdf.rsplit('.', 1)[0] + '.compressed.pdf'
+cmd = f'gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dNOPAUSE -dBATCH -sOutputFile={output_pdf} {input_pdf}'
+
+if __name__ == '__main__':
+   try:
+     if sys.argv[1] == '-h':
+        usg()
+        sys.exit()
+   except Exception:
+     pass
+   import subprocess; 
+   cmd = cmd; spr = subprocess.run(cmd.split(), capture_output=True, check=True, text=True, universal_newlines=True); 
+   sprout = spr.stdout; sperr = spr.stderr; spret = spr.returncode
+   end_time = time.time()
+   elapsed_time = end_time - start_time
+   print(f"Elapsed time: {elapsed_time} seconds")

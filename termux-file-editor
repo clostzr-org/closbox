@@ -1,0 +1,12 @@
+#!/data/data/com.termux/files/usr/bin/bash
+export cfub=/data/data/com.termux/files/usr/bin
+export e="echo -e"
+export red="\e[31m"
+export grn="\e[32m"
+export blu="\e[34m"
+export yel="\e[33m"
+export prp="\e[35m"
+export cyn="\e[36m"
+export nll="\e[0m"
+export PATH=$PATH:$(dirname $0)
+tfe.sh "$@"  

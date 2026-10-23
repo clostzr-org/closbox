@@ -1,0 +1,32 @@
+#!/data/data/com.termux/files/usr/bin/python
+import colorama, datetime, inspect, json, os
+import re, stat, subprocess, sys
+from colorama import Fore
+fbl = Fore.BLUE
+fcy = Fore.CYAN
+fgr = Fore.GREEN
+flb = Fore.LIGHTBLUE_EX
+fmg = Fore.MAGENTA
+frd = Fore.RED
+frs = Fore.RESET
+fyl = Fore.YELLOW
+caller = sys.argv[0].replace('.py', '')
+argc = len(sys.argv)
+if argc > 1:
+ a1 = sys.argv[1]
+else:
+ pass
+ 
+try:
+ with open(caller, 'r'):
+  pass
+except Exception:
+ import mkexe
+ from mkexe import mkx
+ mkx(sys.argv[0])
+
+print(f'__sys.argv={sys.argv}')
+args = ' '.join(sys.argv)
+args = args.replace(sys.argv[0], '')
+print(f'__args={args}')
+os.system(f"gupload {args}")

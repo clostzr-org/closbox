@@ -1,0 +1,328 @@
+#!/data/data/com.termux/files/usr/bin/python
+import os, sys, time, inspect, xlsxwriter
+from ansicolors import *
+sdn = os.path.dirname(sys.argv[0])
+sbn = os.path.basename(sys.argv[0])
+sne = os.path.splitext(sbn)[0]
+sdbne = f'{sdn}/{sne}'
+home = '/data/data/com.termux/files/home'
+hbak = home + '/bak'
+hbin = '/bin'
+verbose = False
+start_time = time.time()
+import osl
+osl.osl(sys.argv[0])
+for message in osl.info:
+    print(message)
+args = sys.argv[1:]
+jargs = ' '.join(args).strip()
+def usg():
+    usg = inspect.cleandoc(f'''
+    alias: {fgr} {frs}
+ function: {fyl} {frs}
+    usage: {frs} {sbn} [argument]
+    ''')
+    print(f'{usg}')
+def create_excel_from_file(file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_path}")
+        return
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        return
+    blocks = content.split('\n\n')
+    output_dir = f'/sdcard/{sne}'
+    if not os.path.exists(output_dir):
+        try:
+            os.makedirs(output_dir)
+        except OSError as e:
+            print(f"Error creating directory {output_dir}: {e}")
+            return
+    import datetime
+    now = datetime.datetime.now()
+    timestamp = now.strftime("%y%m%d-%H%M%S")
+    print(timestamp)
+    filename = os.path.join(output_dir, f"{sne}_{timestamp}.xlsx")
+    try:
+        workbook = xlsxwriter.Workbook(filename)
+        for block_num, block in enumerate(blocks):
+            titles = []
+            subtitles = []
+            intro_lines = []
+            headers_str = None
+            subheader_str = None
+            content_lines = []
+            lpos_lines = []
+            cpos_lines = []
+            rpos_lines = []
+            sheetname = None
+            default_rows = 13
+            data_lines = []
+            for line in block.splitlines():
+                line = line.strip()
+                if line.startswith('title:'):
+                    titles.append(line[len('title:'):].strip())
+                elif line.startswith('subs:'):
+                    subtitles.append(line[len('subs:'):].strip())
+                elif line.startswith('intro:'):
+                    intro_lines.append(line[len('intro:'):].strip())
+                elif line.startswith('headers:'):
+                    headers_str = line[len('headers:'):].strip()
+                elif line.startswith('below headers:'):
+                    subheader_str = line[len('below headers:'):].strip()
+                elif line.startswith('content:'):
+                    content_lines.append(line[len('content:'):].strip())
+                elif line.startswith('lpos:'):
+                    lpos_lines.append(line[len('lpos:'):].strip())
+                elif line.startswith('cpos:'):
+                    cpos_lines.append(line[len('cpos:'):].strip())
+                elif line.startswith('rpos:'):
+                    rpos_lines.append(line[len('rpos:'):].strip())
+                elif line.startswith('sheetname:'):
+                    sheetname = line[len('sheetname:'):].strip()
+                elif line.startswith('rownum:'):
+                    try:
+                        default_rows = int(line[len('rownum:'):].strip())
+                        print(f'def_rows: {default_rows}')
+                    except ValueError:
+                        print(f"Invalid rownum value: {line[len('rownum:'):].strip()}. Using default value 13.")
+                elif line.startswith('data:'):
+                    data_lines.append(line[len('data:'):].strip())
+            if titles and headers_str:
+                headers = [h.strip() for h in headers_str.split(',')]
+                subheaders = [sh.strip() for sh in (subheader_str.split(',') if subheader_str else [])]
+                sheet_name = sheetname if sheetname else f"Sheet{block_num + 1}"
+                sheet_name = sheet_name[:31] if len(sheet_name) > 31 else sheet_name
+                worksheet = workbook.add_worksheet(sheet_name)
+                write_excel_sheet(workbook, worksheet, titles, subtitles, intro_lines, headers, subheaders, content_lines, lpos_lines, cpos_lines, rpos_lines, data_lines, default_rows=default_rows, headers_count=len(headers))
+        workbook.close()
+        print(f"Excel file '{filename}' created successfully with multiple sheets.")
+    except Exception as e:
+        print(f"Error creating Excel file: {e}")
+def write_excel_sheet(workbook, worksheet, titles, subtitles, intro_lines, headers, subheaders, content_lines, lpos_lines, cpos_lines, rpos_lines, data_lines, default_rows, headers_count):
+    title_format = workbook.add_format({
+        'font_name': 'Inconsolata',
+        'bold': True,
+        'align': 'center',
+        'valign': 'vcenter',
+        'font_size': 12})
+    subtitle_format = workbook.add_format({
+        'font_name': 'Inconsolata',
+        'bold': False,
+        'italic': False,
+        'align': 'center',
+        'valign': 'vcenter',
+        'font_size': 11})
+    intro_format = workbook.add_format({
+        'align': 'left',
+        'valign': 'top',
+        'text_wrap': True})
+    header_format = workbook.add_format({
+        'bold': True,
+        'align': 'center',
+        'text_wrap': True,
+        'valign': 'vcenter'})
+    subheader_format = workbook.add_format({
+        'bold': False,
+        'align': 'center',
+        'text_wrap': True,
+        'valign': 'vcenter'})
+    lpos_format = workbook.add_format({'align': 'center', 'text_wrap': True})
+    cpos_format = workbook.add_format({'align': 'center', 'text_wrap': True})
+    rpos_format = workbook.add_format({'align': 'center', 'text_wrap': True})
+    content_format = workbook.add_format({'align': 'left', 'valign': 'top', 'text_wrap': True})
+    numbering_format = workbook.add_format({'align': 'center'})
+    zigzag_left_format = workbook.add_format({'align': 'left', 'valign': 'top'})
+    zigzag_center_format = workbook.add_format({'align': 'center', 'valign': 'top'})
+    column_widths = {}
+    row_num = 0
+    max_cols = max(len(headers), len(subheaders) if subheaders else 0)
+    for title in titles:
+        if max_cols > 1:
+            worksheet.merge_range(row_num, 0, row_num, max_cols - 1, title, title_format)
+        else:
+            worksheet.write(row_num, 0, title, title_format)
+        row_num += 1
+    for subtitle in subtitles:
+        if subtitle:
+            if max_cols > 1:
+                worksheet.merge_range(row_num, 0, row_num, max_cols - 1, subtitle, subtitle_format)
+            else:
+                worksheet.write(row_num, 0, subtitle, subtitle_format)
+            row_num += 1
+    if intro_lines:
+        last_written_row = row_num -1
+        for intro_line in intro_lines:
+            if max_cols > 1:
+                worksheet.merge_range(row_num, 0, row_num, max_cols - 1, intro_line.replace('\\n', '\n'), intro_format)
+            else:
+                worksheet.write(row_num, 0, intro_line.replace('\\n', '\n'), intro_format)
+            row_num += 1
+    header_row = row_num
+    subheader_row = header_row + 1 if subheaders else header_row
+    col_num = 0
+    header_col_start = 0
+    tanda_tangan_col = None
+    nama_col = None
+    gaji_per_hari_col = None
+    jumlah_hari_kerja_col = None
+    total_yg_diterima_col = None
+    for i, header in enumerate(headers):
+        merge_count = 1
+        header_text = header
+        explicit_width = None
+        if '{char=' in header and '}' in header:
+            try:
+                start_index = header.find('{char=') + len('{char=')
+                end_index = header.find('}', start_index)
+                width_value = int(header[start_index:end_index])
+                explicit_width = width_value
+                header_text = header[:header.find('{char=')].strip()
+                header = header_text
+            except ValueError:
+                pass
+        if header and header.endswith(')') and '(' in header:
+            try:
+                merge_count = int(header[header.rfind('(') + 1: -1])
+                header = header[:header.rfind('(')].strip()
+            except ValueError:
+                pass
+        if merge_count > 1:
+            worksheet.merge_range(header_row, header_col_start, header_row, header_col_start + merge_count - 1, header, header_format)
+        else:
+            worksheet.write(header_row, header_col_start, header, header_format)
+        if explicit_width is not None:
+            column_width = explicit_width
+        else:
+            column_width = len(header_text) + 2
+        column_widths[header_col_start] = max(column_widths.get(header_col_start, 0), column_width)
+        for j in range(header_col_start, header_col_start + merge_count):
+            column_widths[j] = column_widths[header_col_start]
+        if header == 'Tanda tangan':
+            tanda_tangan_col = header_col_start
+        if header == 'Nama':
+            nama_col = header_col_start
+        if header == 'Gaji per hari':
+            gaji_per_hari_col = header_col_start
+        if header == 'Jumlah hari kerja':
+            jumlah_hari_kerja_col = header_col_start
+        if header == 'Jumlah gaji yg diterima':
+            total_yg_diterima_col = header_col_start
+        header_col_start += merge_count
+        col_num += 1
+    if tanda_tangan_col is not None:
+        number = 1
+        zigzag_row = header_row + 1 if not subheaders else subheader_row + 1
+        num_lpos = len(lpos_lines)
+        num_cpos = len(cpos_lines)
+        num_rpos = len(rpos_lines)
+        max_lines = max(num_lpos, num_cpos, num_rpos)
+        for i in range(default_rows):
+            number_str = f"{number}."
+            format = zigzag_left_format if number % 2 != 0 else zigzag_center_format
+            worksheet.write(zigzag_row + i, tanda_tangan_col, number_str, format)
+            number += 1
+    if subheaders:
+        col_num = 0
+        for subheader in subheaders:
+            worksheet.write(subheader_row, col_num, subheader, subheader_format)
+            column_widths[col_num] = max(column_widths.get(col_num, 0), len(subheader) + 2)
+            col_num += 1
+        row_num = subheader_row + 1
+    else:
+        row_num = header_row + 1
+    total_gaji = 0  # Initialize total_gaji here
+    for i in range(default_rows):
+        worksheet.write(row_num + i, 0, i + 1, numbering_format)
+        if i < len(content_lines):
+            content = content_lines[i].replace('\\n', '\n')
+            worksheet.write(row_num + i, 1, content, content_format)
+            column_widths[1] = max(column_widths.get(1, 0), len(content) + 2)
+
+        if i < len(data_lines):
+            data = data_lines[i].split(',')
+            data = [d.strip() for d in data]  # Strip whitespace from all data entries
+
+            # Write data to cells based on header positions
+            if nama_col is not None and len(data) > 0:
+                worksheet.write(row_num + i, nama_col, data[0])
+            if gaji_per_hari_col is not None and len(data) > 1:
+                worksheet.write(row_num + i, gaji_per_hari_col, data[1])
+            if jumlah_hari_kerja_col is not None and len(data) > 2:
+                worksheet.write(row_num + i, jumlah_hari_kerja_col, data[2])
+
+            if total_yg_diterima_col is not None and len(data) > 3:
+                total_yg_diterima = data[3]
+                worksheet.write(row_num + i, total_yg_diterima_col, total_yg_diterima)
+                try:
+                    total_gaji += float(total_yg_diterima)
+                except ValueError:
+                    print(f"ValueError: Could not convert '{total_yg_diterima}' to float")  # Debug
+                    pass
+
+        worksheet.set_row(row_num + i, 30)
+
+    # Reserve one row for the total, even if default_rows is 0
+    row_num += default_rows + 1
+
+    # Add the following lines here to write the total
+    if total_yg_diterima_col is not None:
+        total_row = row_num - 1  # Write the total in the reserved row
+        worksheet.write(total_row, total_yg_diterima_col - 1, 'Total:', header_format)
+        worksheet.write(total_row, total_yg_diterima_col, total_gaji, content_format)
+
+    # Calculate start row for lpos, cpos, rpos - after total and reserved row
+    start_row = row_num  # Start after the total row
+
+    num_lines = max(len(lpos_lines), len(cpos_lines), len(rpos_lines))
+    for i in range(num_lines):
+        col = 0
+        if i < len(lpos_lines):
+            content = lpos_lines[i].replace('\\n', '\n')
+            worksheet.merge_range(start_row, col, start_row, col + 1, content, lpos_format)
+            col += 2
+        else:
+            col += 2
+        if i < len(cpos_lines):
+            content = cpos_lines[i].replace('\\n', '\n')
+            worksheet.merge_range(start_row, col, start_row, col + 1, content, cpos_format)
+            col += 2
+        else:
+            col += 2
+        if i < len(rpos_lines):
+            content = rpos_lines[i].replace('\\n', '\n')
+            worksheet.merge_range(start_row, col, start_row, col + 1, content, rpos_format)
+            col += 2
+        else:
+            col += 2
+        worksheet.set_row(start_row, 16)
+        start_row += 1
+        row_num = start_row
+
+    for col_num, width in column_widths.items():
+        worksheet.set_column(col_num, col_num, width)
+        
+file_path = f'bjssum_salary.txt'
+if not os.path.exists(file_path):
+    try:
+        with open(file_path, 'w') as f:
+            f.write('')
+        print(f"File '{file_path}' created successfully.")
+    except Exception as e:
+        print(f"Error creating file '{file_path}': {e}")
+else:
+    print(f"File '{file_path}' already exists.")
+create_excel_from_file(file_path)
+if __name__ == '__main__':
+    try:
+        if sys.argv[1] == '-h':
+            usg()
+            sys.exit()
+    except Exception:
+        pass
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Elapsed time: {elapsed_time} seconds")

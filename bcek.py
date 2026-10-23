@@ -1,0 +1,151 @@
+#!/data/data/com.termux/files/usr/bin/python
+
+def ansi_color(fg=None, bg=None, reset=False):
+    color_codes = {
+    'black':'\033[30m', 'red'    :'\033[31m',
+    'green':'\033[32m', 'yellow' :'\033[33m',
+    'blue' :'\033[34m', 'magenta':'\033[35m',
+    'cyan' :'\033[36m', 'white'  :'\033[37m',
+    'reset':'\033[0m'
+    }
+    code = ''
+    if reset:
+       code = color_codes['reset']
+    elif fg:
+       code = color_codes.get(fg, '')
+    elif bg:
+       code = f'\033[4{color_codes.get(bg, "")[3:].replace("m", "")}m'
+    return code
+
+# Define color shortcuts for convenience
+fbk = ansi_color(fg='black')
+frd = ansi_color(fg='red')
+fgr = ansi_color(fg='green')
+fyl = ansi_color(fg='yellow')
+fbl = ansi_color(fg='blue')
+fmg = ansi_color(fg='magenta')
+fcy = ansi_color(fg='cyan')
+fwh = ansi_color(fg='white')
+frs = ansi_color(fg='reset')
+
+bbk = ansi_color(bg='black')
+brd = ansi_color(bg='red')
+bgr = ansi_color(bg='green')
+bcy = ansi_color(bg='yellow')
+byl = ansi_color(bg='blue')
+bbl = ansi_color(bg='magenta')
+bmg = ansi_color(bg='cyan')
+bwh = ansi_color(bg='white')
+brs = ansi_color(bg='reset')
+
+import os, sys
+sdn   = os.path.dirname(sys.argv[0])
+sbn   = os.path.basename(sys.argv[0])
+sne   = os.path.splitext(sbn)[0]
+sdbne = f'{sdn}/{sne}'
+home  = '/data/data/com.termux/files/home'
+hbak  = home + '/bak'
+hbin  = home + '/bin'
+verbose = False
+
+import time
+start_time = time.time()
+
+def osl(*args):
+    """Creates a symbolic link for the given file in the symlink directory."""
+    global info
+    info = []
+    home = os.environ['HOME']
+    symdir = f'{home}/symlink'
+    source_path = next((arg for arg in args if os.path.isfile(arg)), sys.argv[0])
+    if not source_path.endswith('.py'):
+       return
+    lpbn = os.path.basename(source_path).rsplit('.', 1)[0]
+    link_path = f'{symdir}/{lpbn}'
+    if not os.path.isdir(symdir):
+       os.mkdir(symdir)
+    if os.path.exists(link_path):
+       if not os.path.islink(link_path):
+            os.remove(link_path)
+    try:
+       os.symlink(source_path, link_path)
+    except Exception:
+       pass
+    if os.path.islink(link_path):
+       info.append(f"Symbolic link '{link_path}' exists.")
+    else:
+       info.append(f"Failed to create symbolic link '{link_path}'.")
+        
+osl()
+
+args = sys.argv[1:]
+jargs = ' '.join(args).strip()
+
+import inspect
+def usg():
+    usg = inspect.cleandoc(f'''
+    alias: {fgr} {frs}
+ function: {fyl} {frs}
+    usage: {frs} {sbn} [argument]
+    ''')
+    print(f'{usg}')
+ 
+#insert_your_codes_here
+import subprocess
+
+def is_bash_program_installed(program_name):
+  """
+  Checks if a given bash program is installed by trying to run it.
+
+  Args:
+    program_name: The name of the program to check (e.g., "ls", "git", "ffmpeg").
+
+  Returns:
+    True if the program is installed and executable, False otherwise.
+  """
+  try:
+    # Run the 'which' command to find the program's path.
+    # 'which' returns the full path to the program if it's found,
+    # and exits with a non-zero exit code if it's not.
+    process = subprocess.run(['which', program_name],
+                             capture_output=True,  # Capture stdout and stderr
+                             text=True,         # Decode stdout and stderr as text
+                             check=True)         # Raise an exception for non-zero exit codes
+
+    # If 'which' succeeds, the program is installed.
+    # The output will contain the full path to the program.
+    program_path = process.stdout.strip()
+    if program_path:
+      return True
+    else:
+      return False
+
+  except subprocess.CalledProcessError:
+    # 'which' returned a non-zero exit code, meaning the program wasn't found.
+    return False
+  except FileNotFoundError:
+    # 'which' command not found (very unlikely in most environments, but good to handle).
+    return False
+  except Exception as e:
+    print(f"An unexpected error occurred: {e}") # Handle other exceptions gracefully
+    return False
+
+# Example usage:
+program_to_check = input("Enter the name of the bash program to check: ")
+if is_bash_program_installed(program_to_check):
+  print(f"'{program_to_check}' is installed.")
+else:
+  print(f"'{program_to_check}' is not installed.")
+
+
+
+if __name__ == '__main__':
+   try:
+     if sys.argv[1] == '-h':
+        usg()
+        sys.exit()
+   except Exception:
+     pass
+   end_time = time.time()
+   elapsed_time = end_time - start_time
+   print(f"Elapsed time: {elapsed_time} seconds")
