@@ -116,7 +116,7 @@ if not os.path.exists(f'{sdn}{os.sep}{sne}.cmd'):
         @echo off
         setLocal enableDelayedExpansion
         title %CD%
-        "%~dpn0.py" %* 
+        @py "%~dpn0.py" %* 
         ''')
         oscfw.write(scont)
         print(f'new_cmd: {scf}')
