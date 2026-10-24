@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/python
+#!/usr/bin/env python3
 import colorama, inspect, os, subprocess, sys, time
 
 from colorama import Back, Fore, Style

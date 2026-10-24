@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/python
+#!/usr/bin/env python3
 import time
 start_time = time.time()
 import os, sys
