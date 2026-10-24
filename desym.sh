@@ -23,7 +23,8 @@ exit
 h1='
 Heres a shortened version of the script:
 '
-if [[ "$1" == "" ]]; then echo -e "filename desymbolizer - strip all non-alphanumerics\n--usage: $(basename $0) [filename]" && exit; fi
+if [[ "$1" == "" ]]; then 
+echo -e "filename desymbolizer - strip all non-alphanumerics\n--usage: $(basename $0) [filename]" && exit; fi
 echo "$*" | sed -E 's/[^a-zA-Z0-9\/\(\)\#\+~\.\-\[\]]/_/g'
 h2='
 This version removes the  usg()  function and 
