@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+import os
+import sys
+import time
+import subprocess
+import argparse
+import inspect
+
+def usg():
+    print(inspect.cleandoc(f'''
+    alias: audio-converter
+    function: convert audio files to different formats
+    usage: {os.path.basename(sys.argv[0])} [file]
+    '''))
+
+def get_clipboard_content():
+    try:
+        result = subprocess.run(['am', 'get-clipboard'], capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+    except Exception as e:
+        print(f"Error getting clipboard content: {e}")
+        return None
+
+def convert_audio(input_file, output_format, bitrate, sample_rate, extra_params=""):
+    """Converts an audio file with bitrate, sample rate, and additional parameters."""
+    base, ext = os.path.splitext(input_file)
+    output_file = f"{base}.{output_format}"
+    
+    if ext.lower()[1:] == output_format.lower():
+        print(f"Error: Input file is already in '{output_format}' format. Skipping.")
+        return True
+
+    try:
+        print(f"Converting '{input_file}' to '{output_file}' ({bitrate}, {sample_rate} Hz)...")
+        command = ["ffmpeg", "-i", input_file, "-vn", '-strict', '-2', '-y']
+        
+        if bitrate != 'default':
+            command.extend(['-ab', bitrate])
+        if sample_rate != 'default':
+            command.extend(['-ar', sample_rate])
+        if extra_params and extra_params != 'none':
+            command.extend(extra_params.split())
+            
+        command.append(output_file)
+        subprocess.run(command, check=True, capture_output=True)
+        print(f"Conversion complete: '{output_file}'")
+        return True
+    except FileNotFoundError:
+        print("Error: ffmpeg not found. Please install it (e.g., 'pkg install ffmpeg').")
+        return False
+    except subprocess.CalledProcessError as e:
+        print(f"Conversion failed: {e}")
+        return False
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return False
+
+def batch_convert_directory(directory, output_format, bitrate, sample_rate, extra_params=""):
+    print(f"\nBatch conversion info:\nDir: {directory}\nBitrate: {bitrate}\nSample Rate: {sample_rate}\nParams: {extra_params}")
+    
+    success = True
+    for filename in os.listdir(directory):
+        if filename.lower().endswith(('.flac', '.mp3', '.m4a', '.ogg', '.opus', '.wav')):
+            filepath = os.path.join(directory, filename)
+            if not convert_audio(filepath, output_format, bitrate, sample_rate, extra_params):
+                success = False
+    return success
+
+def main():
+    start_time = time.time()
+    
+    # Handle help flag
+    if len(sys.argv) > 1 and sys.argv[1] == '-h':
+        usg()
+        return
+
+    parser = argparse.ArgumentParser(description="Convert audio file format.")
+    parser.add_argument("input", nargs="?", help="Input audio file or directory path")
+    args = parser.parse_args()
+
+    input_path = args.input
+    if not input_path:
+        input_path = get_clipboard_content()
+        if not input_path:
+            input_path = input("Enter the path to the input audio file or directory: ").strip()
+
+    if not input_path or not os.path.exists(input_path):
+        print(f"Error: Path '{input_path}' not found.")
+        sys.exit(1)
+
+    is_directory = os.path.isdir(input_path)
+
+    while True:
+        print("\nSelect the output audio format:")
+        formats = {'1': 'mp3', '2': 'm4a', '3': 'flac', '4': 'ogg', '5': 'opus', '6': 'wav'}
+        for k, v in formats.items():
+            print(f"{k}. {v}")
+        print("q. Quit")
+
+        choice = input("Enter your choice: ").lower()
+        if choice == 'q':
+            break
+        
+        if choice in formats:
+            output_format = formats[choice]
+
+            print("\nSelect parameter profile:\n1. no_parameters\n2. custom_parameters")
+            p_choice = input("Enter your choice: ")
+            
+            if p_choice == '1':
+                bitrate, sample_rate, extra_params = 'default', 'default', 'none'
+            else:
+                bitrate = input("Enter bitrate (e.g. 128k, 192k, 320k) [default: 128k]: ") or "128k"
+                sample_rate = input("Enter sample rate (e.g. 44100, 48000) [default: 44100]: ") or "44100"
+                extra_params = input("Enter additional ffmpeg parameters: ")
+
+            if is_directory:
+                if batch_convert_directory(input_path, output_format, bitrate, sample_rate, extra_params):
+                    print("Batch conversion complete.")
+                else:
+                    print("Some files in batch conversion failed.")
+                break
+            else:
+                if convert_audio(input_path, output_format, bitrate, sample_rate, extra_params):
+                    break
+        else:
+            print("Invalid choice. Please try again.")
+
+    elapsed_time = time.time() - start_time
+    print(f"Elapsed time: {elapsed_time:.2f} seconds")
+
+if __name__ == '__main__':
+    main()

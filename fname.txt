@@ -1,0 +1,14 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Using parameter expansion
+file_name="${file##*/}"  # Remove everything up to the last slash
+file_ext="${file##*.}"  # Remove everything up to the last dot
+
+# Using basename and ext commands
+file_name=$(basename "$file") 
+file_ext=$(echo "$file" | awk -F '.' '{print $NF}') 
+
+# Example usage
+file="/path/to/my_file.txt"
+
+echo "File name: $file_name"
+echo "File extension: $file_ext" 

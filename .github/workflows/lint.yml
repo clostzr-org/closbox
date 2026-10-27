@@ -1,0 +1,18 @@
+name: lint
+on: [push, pull_request]
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run shellcheck on bash scripts
+        run: |
+          shopt -s nullglob
+          files=(bin/*.sh lib/*.sh scripts/bash/*.sh)
+          if [ ${#files[@]} -gt 0 ]; then
+            shellcheck "${files[@]}"
+          else
+            echo "No bash scripts yet — skipping."
+          fi
