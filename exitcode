@@ -1,0 +1,27 @@
+#!/data/data/com.termux/files/usr/bin/python
+import os, sys, time, subprocess
+
+start_time = time.time()
+
+def usg():
+    print(f"usage: {os.path.basename(sys.argv[0])} [command]")
+
+def get_exit_info(command):
+    try:
+        # Use -h to get help and capture exit code
+        res = subprocess.run([command, "-h"], capture_output=True, text=True)
+        return res.stdout.strip(), res.returncode
+    except FileNotFoundError:
+        return f"Command not found: {command}", 127
+    except Exception as e:
+        return str(e), 1
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2 or sys.argv[1] == '-h':
+        usg()
+    else:
+        cmd = sys.argv[1]
+        out, code = get_exit_info(cmd)
+        print(f"Help output:\n{out}\nExit code: {code}")
+
+    print(f"Elapsed time: {time.time() - start_time:.4f} seconds")

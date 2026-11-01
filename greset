@@ -1,0 +1,16 @@
+# 1. Delete the hidden local git tracking directory
+rm -rf .git
+
+# 2. Re-initialize a clean repository
+git init
+
+# 3. Add your current clean files (ensure your .env or leaked secrets are removed first!)
+git add .
+
+# 4. Create a fresh initial commit
+git commit -m "Initial commit (clostzr)"
+
+# 5. Force-push it to GitHub to overwrite the public history completely
+git remote add origin https://github.com/clostzr-org/closbox
+git branch -M master
+git push -u origin master --force

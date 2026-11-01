@@ -1,0 +1,28 @@
+Here’s the text I can extract from the certificate:
+
+*Left side*
+- No. : 907001/K01/PK1.6.2.1/03/1/2003
+- Potret, tanda tangan dan Nomor Induk pemilik, (setelah potret ditempel, dicap dengan cap Institut Teknologi Bandung)
+- Nomor Induk Mahasiswa : 90799201
+- Tahun masuk : 1999
+
+*Center*
+- Telah Lulus Ujian Apoteker
+- Pada tanggal, 14 Maret 2003
+- Departemen Farmasi
+- Ketua
+- Fakultas Matematika dan Ilmu Pengetahuan Alam
+- Dekan
+
+*Right side*
+- Dr. Sukmadjaja Asyarie
+- Dr.-Ing. Cynthia Linaya Radiman
+- Ijazah ini diberikan berdasarkan Surat Keputusan Rektor Nomor : 036A/SK/K01/PP.5.2/2003
+
+*Stamp/Seal*
+- INSTITUT TEKNOLOGI BANDUNG
+- REKTOR
+
+There’s also a photo + 2 signatures on the document, but names under the signatures aren’t fully legible.
+
+Need me to reformat this or pull out specific details like name, NIM, etc?

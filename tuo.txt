@@ -1,0 +1,1 @@
+-c -i -o /storage/6E30-1D72/Music/%(playlist_title)s/%(title)s.%(ext)s

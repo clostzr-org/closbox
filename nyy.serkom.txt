@@ -1,0 +1,40 @@
+Here's the text from the certificate:
+
+*SERTIFIKAT KOMPETENSI APOTEKER*
+*CERTIFICATE OF PHARMACIST'S COMPETENCY*
+
+No. : 13. 00886 / PPIAI / VI / 2023
+AL. 011889
+
+*PENGURUS PUSAT IKATAN APOTEKER INDONESIA*
+*THE INDONESIAN PHARMACISTS ASSOCIATION (IPA)*
+
+Memberikan Kepada / This is to certify that:
+
+*Nama / Name* : apt. W. Yanti Yulianti, http://S.Si.
+*Tempat & Tanggal Lahir / Place & Date of Birth* : Sumedang, 16 September 1977
+*Nomor Ijazah Apoteker / Pharmacist's Diploma Number* : 90004/01/13/3.6.2.10/03/I/2003
+*Tanggal Ijazah Apoteker / Pharmacist's Graduation Date* : 28 Maret 2003
+*Perguruan Tinggi / Pharmacy Higher Education* : Institut Teknologi Bandung
+
+Untuk menjalankan Pekerjaan Kefarmasian sampai dengan tanggal 16 September 2028
+Has satisfactorily maintained his/her performance as a competent pharmacist and therefore is entitled to receive this certificate to conduct pharmacy practice until the following valid date.
+This certificate will be valid until 16 September 2028
+
+Jakarta, 19 Juni 2023
+
+*PENGURUS PUSAT*
+*IKATAN APOTEKER INDONESIA*
+*THE INDONESIAN PHARMACISTS ASSOCIATION*
+
+Ketua Umum/President:
+
+apt. Noffendri, http://S.Si.[Signature]
+
+Sekretaris Jenderal/Secretary General:
+
+apt. Lilik Yusuf Indrajaya, SE., http://S.Si., MBA[Signature]
+
+Watermark: *ORIGINAL*
+
+Need this in a specific format like JSON or Word?

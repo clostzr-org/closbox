@@ -1,0 +1,7 @@
+Field,Value
+NPWP,343074498446000
+Nama bank,PT. BANK RAKYAT INDONESIA (PERSERO)
+Nomor rekening,135001000008505
+Nama pemilik rekening,N. Yanti Yulianti
+BPJS Kesehatan/KIS/Askes,0000064879198
+BPJS Ketenagakerjaan,3211175609710007

@@ -1,0 +1,9 @@
+#!/data/data/com.termux/files/usr/bin/python
+import os,shutil,time
+h='/data/data/com.termux/files/home';
+a,b=h+'/closbox/termux.properties',h+'/.termux/termux.properties';
+t=time.time()
+shutil.copy2(a,b);
+os.system('apt install micro;micro -plugin install runit;micro '+b);
+shutil.copy2(b,a)
+print(os.popen('termux-reload-settings').read(),'Elapsed time:',time.time()-t,'seconds')

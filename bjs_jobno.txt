@@ -1,0 +1,43 @@
+data:[01] Entin Sukaesih,100000,5,500000
+data:[02] Fikri Fathurohman,100000,5,500000
+data:[03] Mulyana Santosa Machyar SE,125000,5,625000
+data:[04] Nonoy Nurjanah,100000,5,500000
+data:[05] Oon Wartia,100000,5,500000
+data:[06] Sopiah,100000,5,500000
+data:[07] Yuli Yanti,100000,5,500000
+data:[08] Galih Ramanda,100000,5,500000
+data:[09] Agus Rohendi,100000,5,500000
+data:[10] Esih,100000,5,500000
+data:[11] Ade Sutisna,150000,5,750000
+data:[12] Jajang,100000,5,500000
+data:[13] Tini Wartini,100000,5,500000
+data:[14] Yana,100000,5,500000
+data:[15] Wartijah,125000,5,625000
+data:[16] Ai Kokon,125000,5,625000
+data:[17] Beben Sobana,100000,5,500000
+data:[18] Bryandita Fahmi Alamin,100000,5,500000
+data:[19] Fitri Dwiyanti,100000,5,500000
+data:[20] Kamal Abdul Aziz,100000,5,500000
+data:[21] Noviyan,100000,5,500000
+data:[22] Restiana Nurhovipah,100000,5,500000
+data:[23] Siti Jubaedah,100000,4,400000
+data:[24] Syifa Nurmala,100000,5,500000
+data:[25] Teguh Muhammad Ramdan,100000,5,500000
+data:[26] Andri Fujiawan,100000,5,500000
+data:[27] Ari Januarsyah Mustafa,100000,5,500000
+data:[28] Cecep Sanjaya Timorsyah,100000,5,500000
+data:[29] Galih Nur Habib,100000,5,500000
+data:[30] Helmi Ridwansyah,100000,5,500000
+data:[31] Herman Hermawan,100000,5,500000
+data:[32] Rd Muh Habil Giri Maulana J,100000,5,500000
+data:[33] Riandra Agustian Putra,100000,5,500000
+data:[34] Zidan Juniar Putra,100000,5,500000
+data:[35] Yati Suryati Maelani,100000,5,500000
+data:[36] Titi Sumiati,125000,5,625000
+data:[37] Yulia Agustin,100000,5,500000
+data:[39] Andre Permana,100000,5,500000
+data:[40] Asep Wahyudin Permana,100000,5,500000
+data:[41] Cepi Nurwanto,100000,5,500000
+data:[42] Eko Suherman,100000,5,500000
+data:[43] Indra Putra Gumilang S.K.M,100000,5,500000
+data:[44] Yuli Fridiawati,150000,5,750000

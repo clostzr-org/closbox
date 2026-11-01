@@ -1,0 +1,32 @@
+Tanggal,Keterangan Pembayaran,Jumlah
+25/11/2025,"Styrofoam Mega nasi Polos 1 Bal",Rp126,000
+25/11/2025,"Bryan mika TS-4 16 x 16 pack @100pcs 4x16.000",Rp64,000
+25/11/2025,"2 kran tbk pjg hitam vol1066, 1 seal tape kecil ysk, dan 1 cornis ecer",Rp76,500
+25/11/2025,"4 kg tali dolar",Rp90,000
+25/11/2025,"mega 3 polos 600xRp450, tray 16x16 600xrp180, dan plastik karet hijau 10x20 pak besar khj 1/4 4xrp8000",Rp392,000
+,"Total Akumulasi Dari Bukti Transaksi/Nota Pembelanjaan",Rp748,500
+Tanggal,Keterangan Pembayaran,Jumlah
+26/11/2025,"plastik duo 50 @42.5",Rp170,000
+26/11/2025,"plastik duo 50 6 pak 42.500",Rp255,000
+26/11/2025,"sarung tangan plastik",Rp100,000
+26/11/2025,"1 iket plastik gajah 10x20 8.000 dan 200 mika plastik 52.000",Rp180,000
+26/11/2025,"2 mika vip vx1a pak 50pcs dan 1 mika TX jumbo 22 kotak pack",Rp175,000
+26/11/2025,"materai 10.000 @1pcs Rp12.000",Rp12,000
+,"Total Akumulasi Dari Bukti Transaksi/Nota Pembelanjaan",Rp892,000
+Tanggal,Keterangan Pembayaran,Jumlah
+27/11/2025,"plastik karet hijau",Rp80,000
+27/11/2025,"Pembelian kresek ukuran 50 sbnyak 10 pak",Rp450,000
+27/11/2025,"admin transfer",Rp2,500
+27/11/2025,"SUPER SOL PINE 2PCS DAN SUPER SOL SEREH 2PCS",Rp50,000
+,"Total Akumulasi Dari Bukti Transaksi/Nota Pembelanjaan",Rp582,500
+Tanggal,Keterangan Pembayaran,Jumlah
+28/11/2025,"Plastik karet hijau",Rp80,000
+28/11/2025,"Materai 10.000 @12.000 x 5",Rp60,000
+,"Total Akumulasi Dari Bukti Transaksi/Nota Pembelanjaan",Rp140,000
+
+
+126000 + 64000 + 76500 + 90000 + 392000 + 170000
+ + 255000 + 100000 + 180000 + 175000 + 12000 + 80000
+ + 450000 + 2500 + 50000 + 80000 + 60000 = 2513000
+ 
+ 

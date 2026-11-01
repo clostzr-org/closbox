@@ -1,0 +1,3 @@
+#!/data/data/com.termux/files/usr/bin/bash
+export cfub=/data/data/com.termux/files/usr/bin
+ls $cfub | grep "termux-*"
