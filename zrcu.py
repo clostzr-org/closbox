@@ -83,11 +83,7 @@ if os.path.isfile(zrc):
         print -r "path_list:start"
         print -l $path
         print -r "path_list:end"
-        
-        if [ -f "$HOME/bin/sym_rm.py" ]; then
-            python "$HOME/bin/sym_rm.py"
-        fi
-        
+                
         alias micro='micro -clipboard internal'
         cd ~/closbox
         ''')
