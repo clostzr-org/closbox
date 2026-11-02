@@ -1,55 +1,4 @@
 #!/data/data/com.termux/files/usr/bin/python
-import time
-start_time = time.time()
-import os, sys
-home  = '/data/data/com.termux/files/home'
-hbak  = home + '/bak'
-hbin  = home + '/bin'
-if  not hbin in sys.path:
-    sys.path.append(hbin)
-from ansicolors import *
-spath = sys.argv[0]
-if  os.path.islink(spath):
-    spath = os.readlink(spath)
-sdn   = os.path.dirname(spath)
-sbn   = os.path.basename(spath)
-sne   = os.path.splitext(sbn)[0]
-sdbne = f'{sdn}/{sne}'
-home  = '/data/data/com.termux/files/home'
-hbak  = home + '/bak'
-hbin  = home + '/bin'
-verbose = False
-
-import osl; osl.osl(spath)
-for message in osl.info:
-    print(f'{message}')
-
-args  = sys.argv[1:]
-jargs = ' '.join(args).strip()
-
-import inspect
-def usg():
-    usg = inspect.cleandoc(f'''
-    alias: {fgr} {frs}
- function: {fyl} {frs}
-    usage: {frs} {sbn} [argument]
-    ''')
-    print(f'{usg}')
- 
-#insert_your_codes_here
-
-if  __name__ == '__main__':
-    try:
-      if  sys.argv[1] == '-h':
-          usg()
-          sys.exit()
-    except Exception:
-      pass
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print(f"Elapsed time: {elapsed_time} seconds")
-
-#!/data/data/com.termux/files/usr/bin/python
 import os
 import subprocess
 import sys
@@ -74,17 +23,17 @@ def osl(source_file=None):
     """Creates a symbolic link for the script inside the Termux symlink matrix directory."""
     home = os.environ.get('HOME', '/data/data/com.termux/files/home')
     symdir = os.path.join(home, 'symlink')
-    
+
     # Use fallback target if argument wasn't passed directly
     target = source_file if source_file else sys.argv[0]
-    
+
     if not os.path.isfile(target) or not target.endswith('.py'):
         return ["[ - ] Target is not a valid Python script asset."]
-        
+
     os.makedirs(symdir, exist_ok=True)
     base_name = os.path.splitext(os.path.basename(target))[0]
     link_path = os.path.join(symdir, base_name)
-    
+
     try:
         if os.path.exists(link_path) or os.path.islink(link_path):
             os.remove(link_path)
