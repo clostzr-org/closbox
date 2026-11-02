@@ -1,134 +1,143 @@
 #!/data/data/com.termux/files/usr/bin/python
 import os
+import sys
 import shutil
 import subprocess
-import sys
 import time
 
 # Timing start
-start_time = time.time()
+START_TIME = time.time()
 
-# Define paths
-home = '/data/data/com.termux/files/home'
-hbak = f'{home}/bak'
-hbin = f'{home}/bin'
+# Setup paths globally
+HOME = '/data/data/com.termux/files/home'
+HBIN = os.path.join(HOME, 'bin')
 
-# Append to sys.path if needed
-if  hbin not in sys.path:
-    sys.path.append(hbin)
+if HBIN not in sys.path:
+    sys.path.append(HBIN)
 
-# Import local or custom modules safely
+# Safe imports for custom modules
 try:
-    from ansicolors import *
+    from tcget import tcget
+except ImportError:
+    tcget = None
+
+try:
+    from ansicolors import *  # Assumed used for terminal styling
 except ImportError:
     pass
 
 try:
     import osl
-    # FIX: Use index [0] to get the script path string instead of the whole list
-    spath = sys.argv[0]
-    if os.path.islink(spath):
-        spath = os.readlink(spath)
-    
-    osl.osl(spath)
-    for message in osl.info:
-        print(message)
 except ImportError:
-    pass
+    osl = None
 
-# Initialize variables
-verbose = False
 
-def bootstrap_dependencies():
-    """Ensures ghostscript tool is installed once before processing files."""
-    # FIX: Use python's native shutil instead of running external 'which'
-    if shutil.which('gs') is None:
-        print("Installing ghostscript dependencies... please wait.")
-        try:
-            subprocess.run(['pkg', 'install', 'ghostscript', '-y'], check=True)
-            subprocess.run([sys.executable, '-m', 'pip', 'install', 'ghostscript'], check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"Warning: Dependency installation encountered an issue: {e}")
+def check_dependencies():
+    """Ensures ghostscript is installed once before processing files."""
+    if shutil.which('gs') is not None:
+        return
+
+    print("Ghostscript not found. Installing dependencies...")
+    try:
+        # Combined system update and installation quietly
+        subprocess.run(['pkg', 'install', 'ghostscript', '-y'], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run([sys.executable, '-m', 'pip', 'install', 'ghostscript'], check=True, stdout=subprocess.DEVNULL)
+    except subprocess.CalledProcessError as e:
+        print(f"[-] Dependency installation failed: {e}")
+        sys.exit(1)
+
 
 def get_input_path():
-    """Determines the target path via fallback strategies."""
-    # 1. Try resolving path from 'tcget' command line call
-    # FIX: Use python's native shutil instead of running external 'which'
-    if shutil.which('tcget') is not None:
+    """Resolves input path via tcget module, CLI args, or user prompt."""
+    # 1. Try native python module tcget if available
+    if tcget:
         try:
-            path = subprocess.run(['tcget'], capture_output=True, check=True, text=True).stdout.strip()
+            path = tcget()
+            if path and os.path.exists(path.strip()):
+                return path.strip()
+        except Exception:
+            pass
+
+    # 2. Try running tcget as a terminal command fallback
+    if shutil.which('tcget'):
+        try:
+            res = subprocess.run(['tcget'], capture_output=True, text=True, check=True)
+            path = res.stdout.strip()
             if os.path.exists(path):
                 return path
         except subprocess.SubprocessError:
             pass
 
-    # 2. Use command line argument if provided
+    # 3. Use CLI argument if provided
     if len(sys.argv) > 1:
-        # FIX: Access index [1] to grab the first argument path provided
         arg_path = sys.argv[1]
         if os.path.exists(arg_path):
             return arg_path
 
-    # 3. Prompt user directly
+    # 4. Fallback to interactive user prompt
     user_input = input("Enter a file or directory path: ").strip()
     if os.path.exists(user_input):
         return user_input
-    
-    print("Error: Provided path does not exist.")
+
+    print("[-] Path does not exist.")
     sys.exit(1)
 
+
 def process_pdf(file_path):
-    """Compresses a single PDF using ghostscript."""
-    print(f"Processing file: {file_path}")
-    
-    base_path, _ = os.path.splitext(file_path)
-    output_pdf = f"{base_path}.compressed.pdf"
-    
+    """Compresses a single PDF file efficiently using Ghostscript."""
+    print(f"[*] Processing file: {file_path}")
+
+    # Generate output path robustly using os.path
+    base, _ = os.path.splitext(file_path)
+    output_pdf = f"{base}.compressed.pdf"
+
     cmd = [
-        'gs', 
-        '-sDEVICE=pdfwrite', 
-        '-dCompatibilityLevel=1.4', 
-        '-dPDFSETTINGS=/ebook', 
-        '-dNOPAUSE', 
-        '-dBATCH', 
-        f'-sOutputFile={output_pdf}', 
-        file_path
+        'gs', '-sDEVICE=pdfwrite', '-dCompatibilityLevel=1.4',
+        '-dPDFSETTINGS=/ebook', '-dNOPAUSE', '-dBATCH',
+        f'-sOutputFile={output_pdf}', file_path
     ]
-    
+
     try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-        print(f"Successfully Compressed -> {output_pdf}")
+        # Run quietly without flooding the Termux screen with GS logs
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        print(f"[+] Compressed successfully: {output_pdf}")
     except subprocess.CalledProcessError as e:
-        print(f"Error processing {file_path}:\n{e.stderr}")
+        print(f"[-] Error processing {file_path}: {e.stderr.decode().strip()}")
+
 
 def main():
+    # Execute metadata processing if osl module exists
+    if osl:
+        try:
+            spath = os.readlink(sys.argv[0]) if os.path.islink(sys.argv[0]) else sys.argv[0]
+            osl.osl(spath)
+            for message in getattr(osl, 'info', []):
+                print(f"{message}")
+        except Exception:
+            pass
+
     path = get_input_path()
-    
+
+    # Enforce dependency check only if we actually have valid inputs to process
+    check_dependencies()
+
     if os.path.isfile(path):
         if path.lower().endswith('.pdf'):
-            bootstrap_dependencies()
             process_pdf(path)
         else:
-            print("The specified file is not a PDF.")
+            print("[-] The target file is not a PDF.")
     elif os.path.isdir(path):
-        pdf_files = []
+        # Optimized traversal
         for root, _, files in os.walk(path):
             for file in files:
                 if file.lower().endswith('.pdf') and not file.endswith('.compressed.pdf'):
-                    pdf_files.append(os.path.join(root, file))
-        
-        if pdf_files:
-            bootstrap_dependencies()
-            for pdf in pdf_files:
-                process_pdf(pdf)
-        else:
-            print("No PDF files found in the directory.")
+                    process_pdf(os.path.join(root, file))
     else:
-        print("Invalid path type.")
+        print("[-] Invalid path sequence.")
         sys.exit(1)
 
-    if verbose:
-        print(f"Execution finished in {time.time() - start_time:.2f} seconds.")
+    print(f"\n[+] Done! Execution time: {time.time() - START_TIME:.2f} seconds.")
+
 
 if __name__ == "__main__":
     main()
