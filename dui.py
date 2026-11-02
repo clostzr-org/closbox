@@ -72,7 +72,7 @@ def osl(*args):
     else:
        info.append(f"Failed to create symbolic link '{link_path}'.")
         
-osl()
+#osl()
     
 def usg():
     usg = inspect.cleandoc(f'''

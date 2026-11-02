@@ -73,7 +73,7 @@ def osl(*args):
     else:
        info.append(f"Failed to create symbolic link '{link_path}'.")
         
-osl()
+#osl()
 
 args = sys.argv[1:]
 jargs = ' '.join(args).strip()
