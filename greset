@@ -11,6 +11,6 @@ git add .
 git commit -m "Initial commit (clostzr)"
 
 # 5. Force-push it to GitHub to overwrite the public history completely
-git remote add origin https://github.com/clostzr-org/closbox
+git remote add origin git@github.com:clostzr-org/closbox.git
 git branch -M master
 git push -u origin master --force

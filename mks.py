@@ -1,66 +1,75 @@
 #!/usr/bin/env python3
 import time
-start_time = time.time()
 import os
 import sys
+import subprocess
+import shutil
+import argparse
 
-# Fast paths definition
-home = '/data/data/com.termux/files/home'
-hbak = os.path.join(home, 'bak')
-hbin = os.path.join(home, 'bin')
-hsym = os.path.join(home, 'symlink')
-
-if hbin not in sys.path:
-    sys.path.append(hbin)
-
-# Lazy imports for better performance
-from ansicolors import *
-
-# Path parsing for the current script
-spath = os.readlink(sys.argv[0]) if os.path.islink(sys.argv[0]) else os.path.abspath(sys.argv[0])
-sdn = os.path.dirname(spath)
-sbn = os.path.basename(spath)
-sne = os.path.splitext(sbn)[0]
-sdbne = f'{sdn}/{sne}'
-
-import osl
-osl.osl(spath)
-for i in osl.info:
-    print(i)
-
-args = sys.argv[1:]
-
-def usg():
-    import inspect
-    usg_text = inspect.cleandoc(f'''
-    alias: {fgr} make-script{frs}
- function: {fyl} make a script with some environment preset in it{frs}
-    usage: {frs} {sbn} [-py|-sh] [filename]{frs}
-    ''')
-    print(usg_text)
-    sys.exit()
-
-header_py = """#!/usr/bin/env python3
-import time
 start_time = time.time()
+
+# --- UI Helpers ---
+C = {
+    "reset": "\033[0m",
+    "bold": "\033[1m",
+    "green": "\033[32m",
+    "blue": "\033[34m",
+    "cyan": "\033[36m",
+    "yellow": "\033[33m",
+    "red": "\033[31m",
+}
+
+def print_box(title, content):
+    width = 50
+    print(f"{C['cyan']}╔{'═' * (width-2)}╗{C['reset']}")
+    print(f"{C['cyan']}║ {C['bold']}{title.center(width-4)}{C['reset']}{C['cyan']} ║{C['reset']}")
+    print(f"{C['cyan']}╠{'═' * (width-2)}╣{C['reset']}")
+    for line in content.split('\n'):
+        print(f"{C['cyan']}║ {C['reset']}{line.ljust(width-4)}{C['cyan']} ║{C['reset']}")
+    print(f"{C['cyan']}╚{'═' * (width-2)}╝{C['reset']}")
+
+# --- Configuration ---
+home = os.path.expanduser('~')
+hcwd = os.path.join(home, os.path.basename(os.path.dirname(os.path.abspath(__file__))))
+
+if hcwd not in sys.path:
+    sys.path.append(hcwd)
+
+# --- Core Logic ---
+def ensure_micro():
+    """Ensures micro editor is installed."""
+    if shutil.which('micro'):
+        return 'micro'
+    
+    print(f"{C['yellow']}Micro editor not found. Attempting auto-install...{C['reset']}")
+    try:
+        # Official micro installation script for Unix
+        # Using -y logic via non-interactive curl/sh
+        cmd = "curl https://getmic.ro | bash"
+        subprocess.run(cmd, shell=True, check=True)
+        if shutil.which('micro'):
+            print(f"{C['green']}Micro installed successfully!{C['reset']}")
+            return 'micro'
+    except Exception as e:
+        print(f"{C['red']}Auto-install failed: {e}{C['reset']}")
+    
+    return os.environ.get('EDITOR', 'nano')
+
+header_py = f"""#!/usr/bin/env python3
+import time
 import os, sys
 
-home  = '/data/data/com.termux/files/home'
-hbak  = os.path.join(home, 'bak')
-hbin  = os.path.join(home, 'bin')
-if hbin not in sys.path:
-    sys.path.append(hbin)
+start_time = time.time()
+home  = os.path.expanduser('~')
+hcwd  = os.path.join(home, os.path.basename(os.path.dirname(__file__)))
+if hcwd not in sys.path:
+    sys.path.append(hcwd)
 
-from ansicolors import *
 spath = os.readlink(sys.argv[0]) if os.path.islink(sys.argv[0]) else os.path.abspath(sys.argv[0])
 sdn   = os.path.dirname(spath)
 sbn   = os.path.basename(spath)
 sne   = os.path.splitext(sbn)[0]
 verbose = False
-
-import osl; osl.osl(spath)
-for message in osl.info:
-    print(message)
 
 args  = sys.argv[1:]
 jargs = ' '.join(args).strip()
@@ -68,9 +77,9 @@ jargs = ' '.join(args).strip()
 def usg():
     import inspect
     usg_text = inspect.cleandoc(f'''
-    alias: {fgr} {frs}
- function: {fyl} {frs}
-    usage: {frs} {sbn} [argument]
+    alias: 
+ function: 
+    usage: {{sbn}} [argument]
     ''')
     print(usg_text)
 
@@ -78,103 +87,87 @@ if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == '-h':
         usg()
         sys.exit()
-    
+
     # insert_your_codes_here
-    
-    print(f"Elapsed time: {time.time() - start_time} seconds")
+
+    print(f"Elapsed time: {{time.time() - start_time}} seconds")
 """
 
-def hdsh(src_file, sym_file, ext):
-    return f"""#!/data/data/com.termux/files/usr/bin/bash
-if [[ ! -d {hsym} ]]; then
-    mkdir -p {hsym}
-    chmod 755 {hsym}
-fi
-
-if [[ ! -s {sym_file} ]]; then
-    symstat="doesnt-exists"
-    ln -sv {src_file} {sym_file}
-    if [[ -s {sym_file} ]]; then
-        symstat="newly-created"
-        echo -e "symlink created:\\n{sym_file}"
-    else
-        symstat="failed-to-create"
-        echo -e "failed to create symlink:\\n{sym_file}"
-    fi
-else
-    symstat="exists"
-fi
+def hdsh(src_file, ext):
+    return f"""#!/usr/bin/env bash
 
 bnz=$(basename $0)
 if [[ "${{bnz##*.}}" == "{ext.strip('.')}" ]]; then
-    echo -e "source-file : $(readlink {sym_file})"
-    echo -e "symlink-file: {sym_file}"
-    echo -e "symlink-stat: $symstat"
+    echo -e "source-file : {src_file}"
 fi
 
 echo -e "usage: $(basename $0) [command]"
 """
 
-def create(file_base, ext):
-    clean_base = file_base.strip().replace(' ', '_')
-    src_file = os.path.join(hbin, f"{clean_base}{ext}")
-    sym_file = os.path.join(hsym, clean_base)
-    
+def create_script(bname, ext):
+    clean_base = bname.strip().replace(' ', '_')
+    src_file = os.path.join(hcwd, f"{clean_base}{ext}")
+
     match ext:
         case '.py':
-            header = header_py
-            hdlang = 'python'
+            header, lang = header_py, 'Python'
         case '.sh':
-            header = hdsh(src_file, sym_file, ext)
-            hdlang = 'shell'
+            header, lang = hdsh(src_file, ext), 'Shell'
         case '.txt':
-            header = ''
-            hdlang = 'text'
+            header, lang = '', 'Text'
         case _:
-            header = ''
-            hdlang = 'unknown'
+            header, lang = '', 'Unknown'
 
-    print(f'header language:\n{hdlang}')
-    print(f'source_file: {src_file}')
-    
+    os.makedirs(hcwd, exist_ok=True)
+
     if not os.path.isfile(src_file):
-        with open(src_file, 'w') as owsf:
-            owsf.write(f'{header}\n')
-            
+        with open(src_file, 'w') as f:
+            f.write(header + '\n')
+    
     os.chmod(src_file, 0o755)
-    os.system(f'micro {src_file}')
+
+    print_box("Script Created", f"Language: {lang}\nPath: {src_file}")
+    
+    editor = ensure_micro()
+    subprocess.run([editor, src_file])
 
 if __name__ == '__main__':
-    if not args or args[0] in ('-h', '--help'):
-        usg()
+    parser = argparse.ArgumentParser(description="Make a script with environment presets", add_help=False)
+    parser.add_argument('params', nargs='*', help="Filename or extension")
+    parser.add_argument('-h', '--help', action='store_true')
+    
+    args = parser.parse_args()
 
+    if args.help:
+        print_box("Usage", f"mks.py [-py|-sh] [filename]\nExample: mks.py .py myscript")
+        sys.exit()
+
+    if not args.params:
+        print(f"{C['red']}Error: No filename or extension provided.{C['reset']}")
+        sys.exit(1)
+
+    # Resolve extension and basename
     ext = '.txt'
     bname = None
 
-    for a in args:
-        a_low = a.lower()
-        if len(a_low) < 2:
-            continue
-        if a_low.startswith('.'):
-            print(f'length: {len(a_low)} | current a will be the {fmg}extension{frs} ({a_low})')
-            ext = a_low
+    for p in args.params:
+        if p.startswith('.'):
+            ext = p.lower()
         else:
-            print(f'length: {len(a_low)} | current a will be the {fgr}basename{frs} ({a_low})')
-            bname = a_low
+            bname = p
 
     if not bname:
-        print("Error: No valid filename / basename provided.")
+        print(f"{C['red']}Error: Basename is required.{C['reset']}")
         sys.exit(1)
 
     if '.' in bname:
-        bnox, parsed_ext = bname.rsplit('.', 1)
-        ext = f".{parsed_ext}"
-    else:
-        bnox = bname
+        bname, parsed_ext = os.path.splitext(bname)
+        ext = parsed_ext if parsed_ext.startswith('.') else f".{parsed_ext}"
 
-    cnfrm = input(f'do you wanna create this file: {bnox}{ext}? (y/n): ').strip().lower()
-    if cnfrm != 'y':
-        sys.exit()
-
-    create(bnox, ext)
-    print(f"Elapsed time: {time.time() - start_time} seconds")
+    print(f"{C['blue']}Proposed file: {C['bold']}{bname}{ext}{C['reset']}")
+    cnfrm = input(f"Create this file? (y/n): ").strip().lower()
+    
+    if cnfrm == 'y':
+        create_script(bname, ext)
+    
+    print(f"\n{C['green']}Total Execution Time: {time.time() - start_time:.4f}s{C['reset']}")
