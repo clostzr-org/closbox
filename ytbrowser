@@ -1,0 +1,435 @@
+#!/usr/bin/env python3
+import argparse
+import importlib.util
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+DEFAULT_OUTPUT_TEMPLATE = "%(title)s [%(id)s].%(ext)s"
+SAFE_TITLE_RE = re.compile(r"[^\w.-]+", re.UNICODE)
+SIZE_LIMIT_RE = re.compile(r"^\d+(?:\.\d+)?[KMG]?$", re.IGNORECASE)
+
+
+def run_install_command(command):
+    print(f"Installing dependency: {' '.join(command)}", file=sys.stderr)
+    try:
+        subprocess.run(command, check=True)
+    except FileNotFoundError as error:
+        raise RuntimeError(f"Package manager not found: {command[0]}") from error
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(
+            f"Dependency installation failed (exit code {error.returncode}): "
+            f"{' '.join(command)}"
+        ) from error
+
+
+def ensure_python_package(import_name, package_name, auto_install):
+    if importlib.util.find_spec(import_name):
+        return
+    if not auto_install:
+        raise RuntimeError(
+            f"{package_name} is required. Install it with "
+            f"`{sys.executable} -m pip install {package_name}`."
+        )
+
+    run_install_command(
+        [sys.executable, "-m", "pip", "install", "--user", package_name]
+    )
+    importlib.invalidate_caches()
+    if not importlib.util.find_spec(import_name):
+        raise RuntimeError(
+            f"{package_name} installation completed, but Python cannot import "
+            f"{import_name}. Check the pip output and Python environment."
+        )
+
+
+def ensure_system_package(command_name, package_name, auto_install):
+    if shutil.which(command_name):
+        return
+    if not auto_install:
+        raise RuntimeError(
+            f"{command_name} is required. Install the system package "
+            f"{package_name} and ensure it is on PATH."
+        )
+
+    if shutil.which("pkg"):
+        run_install_command(["pkg", "install", "-y", package_name])
+    elif shutil.which("apt-get"):
+        if shutil.which("sudo") and hasattr(os, "geteuid") and os.geteuid() != 0:
+            prefix = ["sudo", "apt-get"]
+        else:
+            prefix = ["apt-get"]
+        run_install_command([*prefix, "update"])
+        run_install_command([*prefix, "install", "-y", package_name])
+    elif shutil.which("brew"):
+        run_install_command(["brew", "install", package_name])
+    else:
+        raise RuntimeError(
+            f"Cannot auto-install {package_name}: no supported package manager "
+            "found (pkg, apt-get, or brew). Install it manually and ensure "
+            f"{command_name} is on PATH."
+        )
+
+    if not shutil.which(command_name):
+        raise RuntimeError(
+            f"{package_name} installation finished, but {command_name} is still "
+            "not on PATH. Restart the shell or install it manually."
+        )
+
+
+def ensure_dependencies(args):
+    auto_install = not args.no_auto_install
+    if not shutil.which("yt-dlp"):
+        ensure_python_package("yt_dlp", "yt-dlp", auto_install)
+
+    if args.audio:
+        ensure_system_package("ffmpeg", "ffmpeg", auto_install)
+    if args.title_mode == "transliterate":
+        ensure_python_package("jaconv", "jaconv", auto_install)
+    elif args.title_mode == "translate":
+        ensure_system_package("trans", "translate-shell", auto_install)
+
+
+def run_ytdlp(arguments, *, capture_output=False):
+    try:
+        command = shutil.which("yt-dlp")
+        if command:
+            executable = [command]
+        elif importlib.util.find_spec("yt_dlp"):
+            executable = [sys.executable, "-m", "yt_dlp"]
+        else:
+            raise RuntimeError("yt-dlp is missing; rerun without --no-auto-install.")
+        return subprocess.run(
+            [*executable, *arguments],
+            check=True,
+            capture_output=capture_output,
+            text=True,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError("yt-dlp could not be started. Check its installation and PATH.") from error
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr.strip() if error.stderr else str(error)
+        raise RuntimeError(f"yt-dlp failed: {detail}") from error
+
+
+def get_entries(url):
+    result = run_ytdlp(
+        ["--flat-playlist", "--dump-single-json", "--no-warnings", url],
+        capture_output=True,
+    )
+    try:
+        metadata = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"yt-dlp returned invalid playlist metadata: {error}") from error
+
+    raw_entries = metadata.get("entries")
+    if raw_entries is None:
+        raw_entries = [metadata]
+
+    entries = []
+    for entry in raw_entries:
+        if not entry:
+            continue
+        entry_url = entry.get("webpage_url") or entry.get("url")
+        video_id = entry.get("id")
+        if not entry_url or not entry_url.startswith(("http://", "https://")):
+            if not video_id:
+                continue
+            entry_url = f"https://www.youtube.com/watch?v={video_id}"
+        entries.append(
+            {
+                "id": video_id or str(len(entries) + 1),
+                "title": entry.get("title") or video_id or entry_url,
+                "url": entry_url,
+            }
+        )
+    return metadata.get("title") or metadata.get("playlist_title") or "YouTube download", entries
+
+
+def parse_selection(selection, count):
+    if selection is None:
+        return list(range(count))
+    if not selection.strip():
+        raise ValueError("Selection cannot be empty")
+
+    indexes = []
+    for value in selection.split(","):
+        value = value.strip()
+        if not value.isdigit():
+            raise ValueError(f"Invalid selection: {value!r}")
+        index = int(value) - 1
+        if index < 0 or index >= count:
+            raise ValueError(f"Video number {value} is outside the range 1-{count}")
+        if index not in indexes:
+            indexes.append(index)
+    return indexes
+
+
+def select_interactively(entries):
+    print("\nVideos:")
+    for index, entry in enumerate(entries, start=1):
+        print(f"{index}. {entry['title']}")
+
+    while True:
+        choice = input("Select numbers separated by commas, 'a' for all, or 'q' to quit: ")
+        choice = choice.strip().lower()
+        if choice == "q":
+            return []
+        if choice == "a":
+            return list(range(len(entries)))
+        try:
+            return parse_selection(choice, len(entries))
+        except ValueError as error:
+            print(error)
+
+
+def transform_title(title, mode, language):
+    if mode == "transliterate":
+        try:
+            import jaconv
+        except ImportError as error:
+            raise RuntimeError(
+                "The transliterate mode requires jaconv. Rerun without "
+                "--no-auto-install or install it with: pip install jaconv"
+            ) from error
+        title = jaconv.kana2alphabet(title)
+        title = jaconv.z2h(title, kana=False, ascii=True, digit=True)
+    elif mode == "translate":
+        translator = shutil.which("trans")
+        if not translator:
+            raise RuntimeError(
+                "The translate mode requires translate-shell ('trans') on PATH. "
+                "Rerun without --no-auto-install or install it manually."
+            )
+        try:
+            result = subprocess.run(
+                [translator, "-brief", f":{language}", title],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=20,
+            )
+        except (OSError, subprocess.SubprocessError) as error:
+            raise RuntimeError(f"Translation failed for {title!r}: {error}") from error
+        title = result.stdout.strip()
+
+    safe_title = SAFE_TITLE_RE.sub("_", title).strip(" ._-")
+    return safe_title or "untitled"
+
+
+def notify(title, message):
+    notifier = shutil.which("termux-notification")
+    if not notifier:
+        print("Warning: termux-notification not found; skipping notification.", file=sys.stderr)
+        return
+    try:
+        subprocess.run(
+            [notifier, "--title", title, "--content", message],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as error:
+        print(f"Warning: could not send Termux notification: {error}", file=sys.stderr)
+
+
+def download_arguments(args, output_template, url):
+    command = [
+        "--continue",
+        "--ignore-errors",
+        "--output",
+        output_template,
+        "--progress",
+    ]
+    if args.audio:
+        command.extend(["--extract-audio", "--audio-format", args.audio_format, "--format", "bestaudio/best"])
+    if args.max_filesize:
+        command.extend(["--max-filesize", args.max_filesize])
+    if args.geo_bypass:
+        command.append("--geo-bypass")
+        if args.geo_country:
+            command.extend(["--geo-bypass-country", args.geo_country])
+    if args.format:
+        command.extend(["--format", args.format])
+    command.append(url)
+    return command
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Download a YouTube video or playlist with optional title translation."
+    )
+    parser.add_argument("url", help="Video or playlist URL")
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=Path("downloads"),
+        help="Output directory (default: ./downloads)",
+    )
+    parser.add_argument(
+        "--output-template",
+        default=DEFAULT_OUTPUT_TEMPLATE,
+        help="yt-dlp output template for unmodified titles",
+    )
+    parser.add_argument(
+        "--audio",
+        action="store_true",
+        help="Extract audio instead of downloading video",
+    )
+    parser.add_argument(
+        "--audio-format",
+        default="mp3",
+        help="Audio format used with --audio (default: mp3)",
+    )
+    parser.add_argument(
+        "--format",
+        help="yt-dlp format selector, e.g. 'bestvideo+bestaudio/best'",
+    )
+    parser.add_argument(
+        "--max-filesize",
+        help="Skip downloads larger than a limit, e.g. 16M",
+    )
+    parser.add_argument(
+        "--title-mode",
+        choices=("original", "transliterate", "translate"),
+        default="original",
+        help="Transform playlist filenames (default: original)",
+    )
+    parser.add_argument(
+        "--language",
+        default="en",
+        help="Translation target language for --title-mode translate (default: en)",
+    )
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument(
+        "--select",
+        help="Comma-separated 1-based playlist numbers to download",
+    )
+    selection.add_argument(
+        "--interactive",
+        action="store_true",
+        help="List playlist entries and select interactively",
+    )
+    parser.add_argument(
+        "--geo-bypass",
+        action="store_true",
+        help="Ask yt-dlp to bypass geo-restrictions",
+    )
+    parser.add_argument(
+        "--geo-country",
+        help="Country code for --geo-bypass-country, e.g. US",
+    )
+    parser.add_argument(
+        "--notify",
+        action="store_true",
+        help="Send start and completion notifications on Termux",
+    )
+    parser.add_argument(
+        "--no-auto-install",
+        action="store_true",
+        help="Do not install missing dependencies automatically",
+    )
+    args = parser.parse_args(argv)
+
+    if args.max_filesize and not SIZE_LIMIT_RE.fullmatch(args.max_filesize):
+        parser.error("--max-filesize must look like 16M or 1.5G")
+    if args.geo_country and not args.geo_bypass:
+        parser.error("--geo-country requires --geo-bypass")
+    try:
+        ensure_dependencies(args)
+    except RuntimeError as error:
+        parser.error(str(error))
+    if args.notify and not shutil.which("termux-notification"):
+        print(
+            "Warning: termux-notification not found; continuing without notifications.",
+            file=sys.stderr,
+        )
+        args.notify = False
+
+    output_dir = args.output_dir.expanduser()
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        parser.error(f"cannot create output directory {output_dir}: {error}")
+
+    requires_entries = (
+        args.select is not None
+        or args.interactive
+        or args.title_mode != "original"
+    )
+    try:
+        if not requires_entries:
+            if args.notify:
+                notify("YouTube Downloader", f"Download started: {args.url}")
+            command = download_arguments(
+                args,
+                str(output_dir / args.output_template),
+                args.url,
+            )
+            run_ytdlp(command)
+            if args.notify:
+                notify("YouTube Downloader", "Download process finished.")
+            return 0
+
+        playlist_title, entries = get_entries(args.url)
+        if not entries:
+            print(f"No downloadable entries found for {args.url}", file=sys.stderr)
+            return 1
+
+        if args.interactive:
+            indexes = select_interactively(entries)
+        elif args.select is not None:
+            indexes = parse_selection(args.select, len(entries))
+        else:
+            indexes = list(range(len(entries)))
+
+        if not indexes:
+            print("No videos selected.")
+            return 0
+
+        playlist_dir = output_dir / SAFE_TITLE_RE.sub("_", playlist_title).strip(" ._-")
+        if len(entries) > 1:
+            playlist_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            playlist_dir = output_dir
+
+        failed = 0
+        for index in indexes:
+            entry = entries[index]
+            title = transform_title(entry["title"], args.title_mode, args.language)
+            filename = f"{index + 1:03d} - {title} [%(id)s].%(ext)s"
+            command = download_arguments(
+                args,
+                str(playlist_dir / filename),
+                entry["url"],
+            )
+            if args.notify:
+                notify(
+                    "YouTube Downloader",
+                    f"Downloading {index + 1}/{len(entries)}: {entry['title']}",
+                )
+            try:
+                run_ytdlp(command)
+            except RuntimeError as error:
+                failed += 1
+                print(error, file=sys.stderr)
+
+        if args.notify:
+            notify(
+                "YouTube Downloader",
+                f"Finished {len(indexes) - failed}/{len(indexes)} selected item(s).",
+            )
+        return 1 if failed else 0
+    except (OSError, RuntimeError, ValueError) as error:
+        print(error, file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
