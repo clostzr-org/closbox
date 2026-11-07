@@ -87,7 +87,7 @@ def osl(*args):
     else:
        info.append(f"Failed to create symbolic link '{link_path}'.")
  
-osl()
+#osl()
  
 def usg():
     usg = inspect.cleandoc(f'''
@@ -106,12 +106,22 @@ args = sys.argv[1:]
 #insert_your_codes_here
 tsft = time.strftime
 tnow = tsft('%Y%m%d-%H%M%S')
-outpath = f'{hbak}/termux-home-bin'
+bakdir = f'{os.path.basename(os.path.dirname(__file__))}-bak'
+outpath = f'{hbak}/{bakdir}'
 os.makedirs(outpath, exist_ok=True)
 import subprocess; 
 outfile = f'{outpath}/hbak-{tnow}.zip'
+try:
+ import dotenv
+except Exception:
+ subprocess.run(['pip', 'install', 'python-dotenv'])
+ import dotenv 
+
+from dotenv import load_dotenv
+load_dotenv()
 password = os.environ.get('pwd6', 'nopassword')
-cmd = f'7z a {outpath}/hbak-{tnow}.zip -p{password} -mx9 -x!chdman -x!__pycache__ {hbin}/*';
+print(f'password for current file: {password}')
+cmd = f'7z a {outpath}/{bakdir}-{tnow}.zip -p{password} -mx9 -x!chdman -x!__pycache__ {os.path.dirname(__file__)}/*';
 try:
    spr = subprocess.run(cmd.split(), capture_output=True, check=True, text=True, universal_newlines=True);
 except Exception:
@@ -148,8 +158,8 @@ for file in files:
     else:
        print(f'{ftrm} {opb(file)} {frd}file_size{frs} : {fsize(file)}')
        os.remove(file)
-
-cmd = ['rclone', 'sync', outpath, 'gdsh:termux-home-bin', '-vvvv']
+subprocess.run(['apt', 'install', 'rclone', '-y'])
+cmd = ['rclone', 'sync', outpath, f'gdsh:{bakdir}', '-vvvv']
 spr = subprocess.run(cmd, stdout=subprocess.PIPE, 
       universal_newlines=True, check=True)
 spo = spr.stdout
