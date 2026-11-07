@@ -85,6 +85,10 @@ if os.path.isfile(zrc):
         print -r "path_list:end"
                 
         alias micro='micro -clipboard internal'
+
+        export SSH_AUTH_SOCK=$PREFIX/var/run/ssh-agent.socket
+        sv status ssh-agent
+        
         cd ~/closbox
         ''')
 
