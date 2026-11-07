@@ -1,202 +1,179 @@
-#!/data/data/com.termux/files/usr/bin/python
-
-def ansi_color(fg=None, bg=None, reset=False):
-    color_codes = {
-    'black':'\033[30m', 'red'    :'\033[31m',
-    'green':'\033[32m', 'yellow' :'\033[33m',
-    'blue' :'\033[34m', 'magenta':'\033[35m',
-    'cyan' :'\033[36m', 'white'  :'\033[37m',
-    'reset':'\033[0m'
-    }
-    code = ''
-    if reset:
-       code = color_codes['reset']
-    elif fg:
-       code = color_codes.get(fg, '')
-    elif bg:
-       code = f'\033[4{color_codes.get(bg, "")[3:].replace("m", "")}m'
-    return code
-
-# Define color shortcuts for convenience
-fbk = ansi_color(fg='black')
-frd = ansi_color(fg='red')
-fgr = ansi_color(fg='green')
-fyl = ansi_color(fg='yellow')
-fbl = ansi_color(fg='blue')
-fmg = ansi_color(fg='magenta')
-fcy = ansi_color(fg='cyan')
-fwh = ansi_color(fg='white')
-frs = ansi_color(fg='reset')
-
-bbk = ansi_color(bg='black')
-brd = ansi_color(bg='red')
-bgr = ansi_color(bg='green')
-bcy = ansi_color(bg='yellow')
-byl = ansi_color(bg='blue')
-bbl = ansi_color(bg='magenta')
-bmg = ansi_color(bg='cyan')
-bwh = ansi_color(bg='white')
-brs = ansi_color(bg='reset')
-
-import os, sys
-sdn   = os.path.dirname(sys.argv[0])
-sbn   = os.path.basename(sys.argv[0])
-sne   = os.path.splitext(sbn)[0]
-sdbne = f'{sdn}/{sne}'
-home  = '/data/data/com.termux/files/home'
-hbak  = home + '/bak'
-hbin  = home + '/bin'
-
-import time
-start_time = time.time()
-
-def osl(*args):
-    """Creates a symbolic link for the given file in the symlink directory."""
-    global info
-    info = []
-    home = os.environ['HOME']
-    symdir = f'{home}/symlink'
-    source_path = next((arg for arg in args if os.path.isfile(arg)), sys.argv[0])
-    if not source_path.endswith('.py'):
-       return
-    lpbn = os.path.basename(source_path).rsplit('.', 1)[0]
-    link_path = f'{symdir}/{lpbn}'
-    if not os.path.isdir(symdir):
-       os.mkdir(symdir)
-    if os.path.exists(link_path):
-       if not os.path.islink(link_path):
-            os.remove(link_path)
-    try:
-       os.symlink(source_path, link_path)
-    except Exception:
-       pass
-    if os.path.islink(link_path):
-       info.append(f"Symbolic link '{link_path}' exists.")
-    else:
-       info.append(f"Failed to create symbolic link '{link_path}'.")
-        
-osl()
-
-args = sys.argv[1:]
-jargs = ' '.join(args).strip()
-
-import inspect
-def usg():
-    usg = inspect.cleandoc(f'''
-    alias: {fgr} {frs}
- function: {fyl} {frs}
-    usage: {frs} {sbn} [argument]
-    ''')
-    print(f'{usg}')
- 
-#insert_your_codes_here
-try:
-   import pytube
-except Exception:
-   os.system(f'pip install pytube')
-   import pytube
-import os
+#!/usr/bin/env python3
 import argparse
+import json
+import shutil
+import subprocess
+import sys
+from pathlib import Path
 
-def browse_playlist(playlist_url):
-    """
-    Browses a YouTube playlist and displays the available videos.
 
-    Args:
-        playlist_url: The URL of the YouTube playlist.
-
-    Returns:
-        A list of pytube.Video objects representing the videos in the playlist.
-    """
+def run_ytdlp(arguments, *, capture_output=False):
     try:
-        playlist = pytube.Playlist(playlist_url)
-        print(f"Playlist: {playlist.title}")
-        print("------------------------------------")
-        videos = []
-        for i, video in enumerate(playlist.video_urls):
-            try:
-                v = pytube.Video(video)
-                print(f"{i+1}. {v.title} ({v.length} seconds)")
-                videos.append(v)
-            except pytube.exceptions.RegexMatchError:
-                print(f"Skipping invalid video URL: {video}")
-            except Exception as e:
-                print(f"Error processing video {video}: {e}")
-        return videos
-    except pytube.exceptions.RegexMatchError:
-        print("Invalid playlist URL.")
-        return []
-    except Exception as e:
-        print(f"Error accessing playlist: {e}")
-        return []
+        return subprocess.run(
+            ["yt-dlp", *arguments],
+            check=True,
+            capture_output=capture_output,
+            text=True,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError("yt-dlp is required. Install it and ensure it is on PATH.") from error
+    except subprocess.CalledProcessError as error:
+        detail = error.stderr.strip() if error.stderr else str(error)
+        raise RuntimeError(f"yt-dlp failed: {detail}") from error
 
 
-def download_video(video, resolution="highest"):
-    """
-    Downloads a YouTube video.
-
-    Args:
-        video: A pytube.Video object.
-        resolution: The desired resolution.  "highest" for best available.
-    """
+def playlist_entries(playlist_url):
+    result = run_ytdlp(
+        ["--flat-playlist", "--dump-single-json", "--no-warnings", playlist_url],
+        capture_output=True,
+    )
     try:
-        if resolution == "highest":
-            stream = video.streams.get_highest_resolution()
-        else:
-            try:
-                stream = video.streams.filter(res=resolution).first()
-                if stream is None:
-                    print(f"Resolution {resolution} not available. Downloading highest resolution instead.")
-                    stream = video.streams.get_highest_resolution()
-            except:
-                print(f"Error finding resolution {resolution}. Downloading highest resolution instead.")
-                stream = video.streams.get_highest_resolution()
+        playlist = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"yt-dlp returned invalid playlist data: {error}") from error
 
-        if stream:
-            print(f"Downloading: {video.title} ({stream.resolution})")
-            stream.download(output_path=".", filename=video.title)  # Download to current directory
-            print("Download complete!")
-        else:
-            print("No suitable stream found for download.")
-    except Exception as e:
-        print(f"Error downloading video: {e}")
+    entries = playlist.get("entries") or []
+    videos = []
+    for entry in entries:
+        if not entry:
+            continue
+        video_id = entry.get("id")
+        url = entry.get("webpage_url") or entry.get("url")
+        if not url or not url.startswith(("http://", "https://")):
+            if not video_id:
+                continue
+            url = f"https://www.youtube.com/watch?v={video_id}"
+        videos.append({"title": entry.get("title") or video_id or url, "url": url})
+    return playlist.get("title") or "Playlist", videos
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Download videos from a YouTube playlist.")
-    parser.add_argument("playlist_url", help="The URL of the YouTube playlist.")
-    parser.add_argument("-s", "--selection", nargs='+', type=int, help="Specific video numbers to download (e.g., -s 1 3 5)")
-    parser.add_argument("-r", "--resolution", default="highest", help="Desired resolution (e.g., 720p, 360p, highest)")
-    args = parser.parse_args()
+def parse_selection(selection, video_count):
+    if not selection:
+        return list(range(video_count))
 
-    videos = browse_playlist(args.playlist_url)
+    indexes = []
+    for number in selection:
+        if number < 1 or number > video_count:
+            raise ValueError(f"Video number out of range: {number} (choose 1-{video_count})")
+        index = number - 1
+        if index not in indexes:
+            indexes.append(index)
+    return indexes
 
+
+def prompt_selection(video_count):
+    while True:
+        choice = input(
+            "Enter video numbers separated by commas, 'a' for all, or 'q' to quit: "
+        ).strip().lower()
+        if choice == "q":
+            return []
+        if choice == "a":
+            return list(range(video_count))
+        try:
+            return parse_selection([int(part.strip()) for part in choice.split(",")], video_count)
+        except ValueError as error:
+            print(f"Invalid selection: {error}")
+
+
+def build_download_arguments(videos, output_dir, audio_only, resolution):
+    arguments = ["--no-warnings", "--output", str(output_dir / "%(title)s.%(ext)s")]
+    if audio_only:
+        arguments.extend(["--extract-audio", "--audio-format", "mp3"])
+    elif resolution != "highest":
+        height = resolution.removesuffix("p")
+        if not height.isdigit() or int(height) < 1:
+            raise ValueError("Resolution must be 'highest' or a height such as '720p'.")
+        arguments.extend(
+            ["--format", f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"]
+        )
+    arguments.extend(video["url"] for video in videos)
+    return arguments
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="List and download videos from a playlist with yt-dlp."
+    )
+    parser.add_argument("playlist_url", help="YouTube playlist URL")
+    parser.add_argument(
+        "-s",
+        "--selection",
+        nargs="+",
+        type=int,
+        metavar="NUMBER",
+        help="1-based video numbers to download (downloads all by default)",
+    )
+    parser.add_argument(
+        "-i",
+        "--interactive",
+        action="store_true",
+        help="Prompt to select videos interactively",
+    )
+    parser.add_argument(
+        "-r",
+        "--resolution",
+        default="highest",
+        help="Maximum video height, e.g. 720p, or 'highest' (video mode only)",
+    )
+    parser.add_argument(
+        "-a",
+        "--audio",
+        action="store_true",
+        help="Extract audio as MP3 instead of downloading video",
+    )
+    parser.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        help="Download directory (defaults to downloads for audio, current directory for video)",
+    )
+    args = parser.parse_args(argv)
+
+    if args.selection and args.interactive:
+        parser.error("--selection and --interactive cannot be used together")
+
+    if not shutil.which("yt-dlp"):
+        parser.error("yt-dlp is required. Install it and ensure it is on PATH.")
+
+    try:
+        title, videos = playlist_entries(args.playlist_url)
+    except RuntimeError as error:
+        parser.error(str(error))
     if not videos:
-        return
+        print(f"No videos found in playlist: {title}")
+        return 1
 
-    if args.selection:
-        # Download selected videos
-        for index in args.selection:
-            if 1 <= index <= len(videos):
-                download_video(videos[index - 1], args.resolution)
-            else:
-                print(f"Invalid video number: {index}")
-    else:
-        # Download all videos in the playlist
-        for video in videos:
-            download_video(video, args.resolution)
+    print(f"Playlist: {title}")
+    print("-" * 40)
+    for number, video in enumerate(videos, start=1):
+        print(f"{number}. {video['title']}")
+
+    try:
+        indexes = (
+            prompt_selection(len(videos))
+            if args.interactive
+            else parse_selection(args.selection, len(videos))
+        )
+        if not indexes:
+            print("No videos selected.")
+            return 0
+        output_dir = args.output_dir or Path("downloads" if args.audio else ".")
+        output_dir.mkdir(parents=True, exist_ok=True)
+        download_arguments = build_download_arguments(
+            [videos[index] for index in indexes],
+            output_dir,
+            args.audio,
+            args.resolution,
+        )
+        run_ytdlp(download_arguments)
+    except (OSError, RuntimeError, ValueError) as error:
+        print(error, file=sys.stderr)
+        return 1
+
+    print("Download complete.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
-
-if __name__ == '__main__':
-   try:
-     if sys.argv[1] == '-h':
-        usg()
-        sys.exit()
-   except Exception:
-     pass
-   end_time = time.time()
-   elapsed_time = end_time - start_time
-   print(f"Elapsed time: {elapsed_time} seconds")
+    sys.exit(main())

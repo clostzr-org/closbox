@@ -1,141 +1,156 @@
-#!/data/data/com.termux/files/usr/bin/python
-import time
-start_time = time.time()
-import os, sys
-home  = '/data/data/com.termux/files/home'
-hbak  = home + '/bak'
-hbin  = home + '/bin'
-if  not hbin in sys.path:
-    sys.path.append(hbin)
-from ansicolors import *
-spath = sys.argv[0]
-if  os.path.islink(spath):
-    spath = os.readlink(spath)
-sdn   = os.path.dirname(spath)
-sbn   = os.path.basename(spath)
-sne   = os.path.splitext(sbn)[0]
-sdbne = f'{sdn}/{sne}'
-home  = '/data/data/com.termux/files/home'
-hbak  = home + '/bak'
-hbin  = home + '/bin'
-verbose = False
-
-import osl; osl.osl(spath)
-for message in osl.info:
-    print(f'{message}')
-
-args  = sys.argv[1:]
-jargs = ' '.join(args).strip()
-
-import inspect
-def usg():
-    usg = inspect.cleandoc(f'''
-    alias: {fgr} {frs}
- function: {fyl} {frs}
-    usage: {frs} {sbn} [argument]
-    ''')
-    print(f'{usg}')
- 
-#insert_your_codes_here
+#!/usr/bin/env python3
+import argparse
 import os
 import re
-try:
-    import pykakasi
-except Exception:
-    os.system(f'pip install pykakasi')
-    import pykakasi
-from pathlib import Path
-#!/usr/bin/env python3
-import os
+import shutil
+import subprocess
 import sys
-import argparse
-import pykakasi
+from pathlib import Path
+
+
+JAPANESE_RE = re.compile(r"[\u3040-\u30ff\u31f0-\u31ff\u3400-\u4dbf\u4e00-\u9fff]")
+INVALID_FILENAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+WHITESPACE_RE = re.compile(r"\s+")
+NAME_SEPARATOR = "_-_"
+
 
 def setup_converter():
-    """Initializes and configures pykakasi for Kunrei-shiki Romaji."""
-    kks = pykakasi.kakasi()
-    # Configure output to Kunrei-shiki romanization style
-    kks.setMode("H", "a")  # Hiragana to Romaji
-    kks.setMode("K", "a")  # Katakana to Romaji
-    kks.setMode("J", "a")  # Kanji to Romaji
-    kks.setMode("r", "Kunrei")  # Set Romaji system to Kunrei
-    return kks.getConverter()
+    try:
+        import pykakasi
+    except ImportError as error:
+        raise RuntimeError("pykakasi is required. Install it with: pip install pykakasi") from error
+    return pykakasi.kakasi()
 
-def convert_text(text, converter):
-    """Converts Japanese text to Kunrei romaji and replaces spaces with underscores."""
-    # Convert Japanese characters
-    converted = converter.do(text)
-    # Replace all white spaces with underscores
-    sanitized = converted.replace(" ", "_")
-    return sanitized
 
-def rename_file(file_path, converter):
-    """Renames a single file if its name contains changes."""
-    dir_name = os.path.dirname(file_path)
-    base_name = os.path.basename(file_path)
-    
-    new_base_name = convert_text(base_name, converter)
-    
-    if base_name != new_base_name:
-        new_file_path = os.path.join(dir_name, new_base_name)
-        try:
-            os.rename(file_path, new_file_path)
-            print(f"[RENAMED] {base_name} -> {new_base_name}")
-        except Exception as e:
-            print(f"[ERROR] Could not rename {base_name}: {e}", file=sys.stderr)
-    else:
-        print(f"[SKIPPED] No changes needed for: {base_name}")
+def has_japanese(text):
+    return bool(JAPANESE_RE.search(text))
 
-def rename_directory_recursive(dir_path, converter):
-    """Recursively walks through a directory and renames files."""
-    if not os.path.exists(dir_path):
-        print(f"[ERROR] Directory does not exist: {dir_path}", file=sys.stderr)
-        return
 
-    # topdown=False is critical so files get renamed before their parent directories change
-    for root, dirs, files in os.walk(dir_path, topdown=False):
-        # Rename files first
-        for file in files:
-            full_path = os.path.join(root, file)
-            rename_file(full_path, converter)
-            
-        # Optional: Rename directories as well if they contain Japanese characters
-        for d in dirs:
-            full_path = os.path.join(root, d)
-            rename_file(full_path, converter)
+def convert_to_kunrei(text, converter):
+    return "".join(fragment["kunrei"] for fragment in converter.convert(text))
+
+
+def translate_text(text, translator, cache):
+    if not translator:
+        return ""
+    if text in cache:
+        return cache[text]
+
+    try:
+        result = subprocess.run(
+            [translator, "-brief", "-to", "en", "-no-warn", text],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f"[WARNING] Translation failed for {text!r}: {error}", file=sys.stderr)
+        cache[text] = ""
+        return ""
+
+    if result.returncode:
+        message = result.stderr.strip() or f"translator exited with status {result.returncode}"
+        print(f"[WARNING] Translation failed for {text!r}: {message}", file=sys.stderr)
+        cache[text] = ""
+        return ""
+
+    cache[text] = result.stdout.strip()
+    return cache[text]
+
+
+def clean_component(text):
+    text = WHITESPACE_RE.sub("_", text.strip())
+    return INVALID_FILENAME_RE.sub("_", text).rstrip(" .")
+
+
+def process_filename(filename, converter, translator=None, translation_cache=None):
+    name, extension = os.path.splitext(filename)
+    if not has_japanese(name) or NAME_SEPARATOR in name:
+        return filename
+
+    original = clean_component(name)
+    romaji = clean_component(convert_to_kunrei(name, converter))
+    if not original or not romaji:
+        return filename
+
+    parts = [original, romaji]
+    if translation_cache is None:
+        translation_cache = {}
+    english = clean_component(translate_text(name, translator, translation_cache))
+    if english and english.casefold() not in {original.casefold(), romaji.casefold()}:
+        parts.append(english)
+
+    return NAME_SEPARATOR.join(parts) + extension
+
+
+def rename_path(path, converter, translator, translation_cache):
+    new_name = process_filename(path.name, converter, translator, translation_cache)
+    if new_name == path.name:
+        print(f"[SKIPPED] Already formatted or no Japanese: {path.name}")
+        return False
+
+    destination = path.with_name(new_name)
+    if os.path.lexists(destination):
+        print(f"[ERROR] Destination already exists: {destination}", file=sys.stderr)
+        return True
+
+    try:
+        path.rename(destination)
+    except OSError as error:
+        print(f"[ERROR] Could not rename {path}: {error}", file=sys.stderr)
+        return True
+
+    print(f"[RENAMED] {path.name}\n       -> {new_name}")
+    return False
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Rename Japanese files to Kunrei Romaji and clean spaces.")
-    parser.add_argument("path", help="Path to the file or directory to process")
-    
+    parser = argparse.ArgumentParser(
+        description="Rename Japanese file and directory names to Original_-_Kunrei_-_English."
+    )
+    parser.add_argument("path", type=Path, help="File or directory to process recursively")
+    parser.add_argument(
+        "--no-translate",
+        action="store_true",
+        help="Skip English translation and only add the original and Kunrei names",
+    )
     args = parser.parse_args()
-    target_path = os.path.abspath(args.path)
-    
-    if not os.path.exists(target_path):
-        print(f"Error: Path '{target_path}' does not exist.")
-        sys.exit(1)
-        
-    converter = setup_converter()
-    
-    if os.path.isfile(target_path):
-        print(f"Processing single file: {target_path}")
-        rename_file(target_path, converter)
-    elif os.path.isdir(target_path):
-        print(f"Processing directory recursively: {target_path}")
-        rename_directory_recursive(target_path, converter)
+
+    target = args.path.expanduser().absolute()
+    if not target.exists():
+        parser.error(f"path does not exist: {target}")
+    if not target.is_file() and not target.is_dir():
+        parser.error(f"path is not a file or directory: {target}")
+
+    translator = None
+    if not args.no_translate:
+        translator = shutil.which("trans")
+        if not translator:
+            print(
+                "[WARNING] translate-shell ('trans') not found; "
+                "continuing without English translations.",
+                file=sys.stderr,
+            )
+
+    try:
+        converter = setup_converter()
+    except RuntimeError as error:
+        parser.error(str(error))
+
+    translation_cache = {}
+    errors = 0
+    if target.is_file():
+        errors += rename_path(target, converter, translator, translation_cache)
+    else:
+        # Process deepest paths first so renaming a directory cannot invalidate its children.
+        paths = sorted(target.rglob("*"), key=lambda path: len(path.parts), reverse=True)
+        for path in paths:
+            if path.is_file() or path.is_dir():
+                errors += rename_path(path, converter, translator, translation_cache)
+
+    return 1 if errors else 0
+
 
 if __name__ == "__main__":
-    main()
-
-
-
-if  __name__ == '__main__':
-    try:
-      if  sys.argv[1] == '-h':
-          usg()
-          sys.exit()
-    except Exception:
-      pass
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print(f"Elapsed time: {elapsed_time} seconds")
+    sys.exit(main())
