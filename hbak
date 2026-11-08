@@ -1,0 +1,152 @@
+#!/usr/bin/env python3
+"""Create a password-protected project backup and upload it with rclone."""
+
+import importlib.util
+import os
+import shutil
+import subprocess
+import sys
+from datetime import datetime
+from pathlib import Path
+
+
+def install(command, name):
+    print(f"Installing {name}...")
+    try:
+        subprocess.run(command, check=True)
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise RuntimeError(f"Could not install {name}; install it manually. {error}") from error
+
+
+def install_python_package(module, package):
+    if importlib.util.find_spec(module) is None:
+        install(
+            [sys.executable, "-m", "pip", "install", package],
+            package,
+        )
+        importlib.invalidate_caches()
+
+
+def install_system_tools(missing):
+    if os.name == "nt":
+        choco = shutil.which("choco")
+        if choco:
+            packages = {"7z": "7zip", "rclone": "rclone"}
+            for tool in missing:
+                install([choco, "install", packages[tool], "-y"], packages[tool])
+            return
+        winget = shutil.which("winget")
+        if winget:
+            packages = {"7z": "7zip.7zip", "rclone": "Rclone.Rclone"}
+            for tool in missing:
+                install(
+                    [
+                        winget, "install", "--id", packages[tool], "--exact",
+                        "--silent", "--accept-package-agreements",
+                        "--accept-source-agreements",
+                    ],
+                    packages[tool],
+                )
+            return
+        raise RuntimeError("Install missing tools with Chocolatey or winget.")
+
+    termux = "com.termux" in os.environ.get("PREFIX", "") or os.environ.get("TERMUX_VERSION")
+    if termux:
+        manager, packages = shutil.which("pkg"), {"7z": "p7zip", "rclone": "rclone"}
+    elif sys.platform == "darwin":
+        manager, packages = shutil.which("brew"), {"7z": "p7zip", "rclone": "rclone"}
+    else:
+        package_managers = (
+            ("apt-get", {"7z": "p7zip-full", "rclone": "rclone"}, ["install", "-y"]),
+            ("dnf", {"7z": "p7zip", "rclone": "rclone"}, ["install", "-y"]),
+            ("yum", {"7z": "p7zip", "rclone": "rclone"}, ["install", "-y"]),
+            ("pacman", {"7z": "p7zip", "rclone": "rclone"}, ["-S", "--noconfirm"]),
+            ("zypper", {"7z": "7zip", "rclone": "rclone"}, ["--non-interactive", "install"]),
+            ("apk", {"7z": "7zip", "rclone": "rclone"}, ["add"]),
+        )
+        for name, packages, arguments in package_managers:
+            manager = shutil.which(name)
+            if manager:
+                break
+        else:
+            raise RuntimeError("No supported package manager found; install 7-Zip and rclone.")
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
+            raise RuntimeError("Installing system tools requires administrator privileges.")
+        for tool in missing:
+            install([manager, *arguments, packages[tool]], packages[tool])
+        return
+
+    if not manager:
+        raise RuntimeError("The platform package manager was not found.")
+    if termux:
+        install([manager, "install", "-y", *(packages[tool] for tool in missing)], ", ".join(missing))
+    else:
+        for tool in missing:
+            install([manager, "install", packages[tool]], packages[tool])
+
+
+def find_7zip():
+    for name in ("7z", "7zz", "7za"):
+        if command := shutil.which(name):
+            return command
+    return None
+
+
+def find_tool(name):
+    command = find_7zip() if name == "7z" else shutil.which(name)
+    if not command:
+        install_system_tools([name])
+        command = find_7zip() if name == "7z" else shutil.which(name)
+    if not command:
+        raise RuntimeError(f"{name} installed but not found on PATH; restart the terminal and retry.")
+    return command
+
+
+def main():
+    source = Path(__file__).resolve().parent
+    backup_name = f"{source.name}-bak"
+    backup_dir = Path.home() / "bak" / backup_name
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    archive = backup_dir / f"hbak-{stamp}.zip"
+    if archive.exists():
+        raise FileExistsError(f"Backup already exists: {archive}")
+
+    install_python_package("dotenv", "python-dotenv")
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    password = os.environ.get("pwd6")
+    if not password:
+        raise RuntimeError("Set pwd6 in the environment or .env file before creating a backup.")
+    seven_zip, rclone = find_tool("7z"), find_tool("rclone")
+
+    subprocess.run(
+        [
+            seven_zip, "a", str(archive), f"-p{password}", "-mx9",
+            "-xr!chdman", "-xr!__pycache__", str(source / "*"),
+        ],
+        check=True,
+    )
+    subprocess.run(
+        [rclone, "copy", str(archive), f"gdsh:{backup_name}"],
+        check=True,
+    )
+
+    older = sorted(
+        backup_dir.glob("hbak-*.zip"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for old_archive in older[1:]:
+        old_archive.unlink()
+    print(f"Backed up {archive} ({archive.stat().st_size:,} bytes)")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        print(f"Backup failed: {error}", file=sys.stderr)
+        raise SystemExit(1)
