@@ -129,7 +129,7 @@ def main():
         check=True,
     )
     subprocess.run(
-        [rclone, "copy", str(archive), f"gdsh:{backup_name}"],
+        [rclone, "copy", str(archive), f"gdsh:{backup_name}-bak"],
         check=True,
     )
 
