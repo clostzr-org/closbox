@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""Open a Bash shell in a directory from the argument or Termux clipboard."""
+
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+def clipboard_directory():
+    command = shutil.which("termux-clipboard-get")
+    if not command:
+        is_termux = os.environ.get("TERMUX_VERSION") or "com.termux" in os.environ.get("PREFIX", "")
+        package_manager = shutil.which("pkg") if is_termux else None
+        if not package_manager:
+            raise RuntimeError("termux-clipboard-get is missing; install Termux:API and termux-api.")
+        subprocess.run([package_manager, "install", "termux-api", "-y"], check=True)
+        command = shutil.which("termux-clipboard-get")
+        if not command:
+            raise RuntimeError("termux-api installed, but termux-clipboard-get is still unavailable.")
+    return subprocess.run([command], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def main():
+    if len(sys.argv) > 2:
+        print(f"Usage: {Path(sys.argv[0]).name} [directory]", file=sys.stderr)
+        return 2
+
+    directory = Path(sys.argv[1] if len(sys.argv) == 2 else clipboard_directory()).expanduser()
+    if not directory.is_dir():
+        print(f"Not a directory: {directory}", file=sys.stderr)
+        return 1
+
+    bash = shutil.which("bash")
+    if not bash:
+        print("Bash is required but was not found on PATH.", file=sys.stderr)
+        return 1
+
+    directory = str(directory.resolve())
+    print(f"cd to {directory}")
+    return subprocess.run(
+        [bash, "-c", 'cd -- "$1" && exec bash', "cdt", directory],
+        check=False,
+    ).returncode
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (OSError, subprocess.SubprocessError, RuntimeError) as error:
+        print(error, file=sys.stderr)
+        raise SystemExit(1)

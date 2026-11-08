@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Recursively search files for a regular-expression pattern."""
+
+import argparse
+import os
+import re
+import sys
+from pathlib import Path
+
+
+SKIP_EXTENSIONS = {".html", ".pyc", ".zip", ".exe", ".bin"}
+
+
+def search(pattern, directory):
+    try:
+        regex = re.compile(pattern)
+    except re.error as error:
+        raise ValueError(f"Invalid regular expression: {error}") from error
+
+    root = Path(directory).expanduser()
+    if not root.is_dir():
+        raise ValueError(f"Not a directory: {root}")
+
+    color = sys.stdout.isatty()
+    red, yellow, reset = ("\033[31m", "\033[33m", "\033[0m") if color else ("", "", "")
+    matches = 0
+    for current, _, files in os.walk(root):
+        for filename in files:
+            path = Path(current, filename)
+            if not path.suffix or path.suffix.lower() in SKIP_EXTENSIONS:
+                continue
+            try:
+                with path.open(encoding="utf-8", errors="ignore") as file:
+                    for line_number, line in enumerate(file, 1):
+                        if regex.search(line):
+                            highlighted = regex.sub(lambda match: f"{red}{match[0]}{reset}", line.rstrip())
+                            print(f"{yellow}{path}{reset}:{line_number}: {highlighted}")
+                            matches += 1
+            except OSError as error:
+                print(f"Skipping {path}: {error}", file=sys.stderr)
+    print(f"Done. Found {matches} matching lines.")
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("pattern", nargs="?", help="Regular expression to search for")
+    parser.add_argument("directory", nargs="?", default=".", help="Directory to search")
+    args = parser.parse_args()
+
+    pattern = args.pattern or input("Search pattern: ").strip()
+    directory = args.directory
+    if not args.pattern:
+        directory = input(f"Directory [{directory}]: ").strip() or directory
+    if not pattern:
+        parser.error("a search pattern is required")
+    try:
+        return search(pattern, directory)
+    except ValueError as error:
+        parser.error(str(error))
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
