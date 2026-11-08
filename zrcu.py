@@ -74,7 +74,7 @@ if os.path.isfile(zrc):
         xstr = inspect.cleandoc(f'''
         # EXTRA LINES GENERATED AUTOMATICALLY        
         # System Paths Optimization
-        for d in ~/.local/bin ~/closbox ~/closbox/_*(N/); do
+        for d in ~/.local/bin ~/bin ~/closbox ~/closbox/_*(N/); do
             if [[ $d:t != "__pycache__" ]]; then
                path+=("$d")
             fi
