@@ -1,143 +1,309 @@
-#!/data/data/com.termux/files/usr/bin/python
+#!/usr/bin/env python3
+"""Compress and merge PDF files.
+
+Run without arguments for interactive mode.
+"""
+
+import argparse
+import importlib
+import importlib.util
 import os
-import sys
 import shutil
 import subprocess
-import time
-
-# Timing start
-START_TIME = time.time()
-
-# Setup paths globally
-HOME = '/data/data/com.termux/files/home'
-HBIN = os.path.join(HOME, 'bin')
-
-if HBIN not in sys.path:
-    sys.path.append(HBIN)
-
-# Safe imports for custom modules
-try:
-    from tcget import tcget
-except ImportError:
-    tcget = None
-
-try:
-    from ansicolors import *  # Assumed used for terminal styling
-except ImportError:
-    pass
-
-try:
-    import osl
-except ImportError:
-    osl = None
+import sys
+from pathlib import Path
 
 
-def check_dependencies():
-    """Ensures ghostscript is installed once before processing files."""
-    if shutil.which('gs') is not None:
-        return
-
-    print("Ghostscript not found. Installing dependencies...")
+def run_installer(command, dependency):
+    print(f"Installing missing dependency: {dependency}")
     try:
-        # Combined system update and installation quietly
-        subprocess.run(['pkg', 'install', 'ghostscript', '-y'], check=True, stdout=subprocess.DEVNULL)
-        subprocess.run([sys.executable, '-m', 'pip', 'install', 'ghostscript'], check=True, stdout=subprocess.DEVNULL)
-    except subprocess.CalledProcessError as e:
-        print(f"[-] Dependency installation failed: {e}")
-        sys.exit(1)
+        subprocess.run(command, check=True)
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise RuntimeError(
+            f"Automatic installation of {dependency} failed. "
+            f"Install it manually and retry. Details: {error}"
+        ) from error
 
 
-def get_input_path():
-    """Resolves input path via tcget module, CLI args, or user prompt."""
-    # 1. Try native python module tcget if available
-    if tcget:
-        try:
-            path = tcget()
-            if path and os.path.exists(path.strip()):
-                return path.strip()
-        except Exception:
-            pass
+def find_ghostscript():
+    for executable in ("gs", "gswin64c", "gswin32c"):
+        command = shutil.which(executable)
+        if command:
+            return command
 
-    # 2. Try running tcget as a terminal command fallback
-    if shutil.which('tcget'):
-        try:
-            res = subprocess.run(['tcget'], capture_output=True, text=True, check=True)
-            path = res.stdout.strip()
-            if os.path.exists(path):
-                return path
-        except subprocess.SubprocessError:
-            pass
-
-    # 3. Use CLI argument if provided
-    if len(sys.argv) > 1:
-        arg_path = sys.argv[1]
-        if os.path.exists(arg_path):
-            return arg_path
-
-    # 4. Fallback to interactive user prompt
-    user_input = input("Enter a file or directory path: ").strip()
-    if os.path.exists(user_input):
-        return user_input
-
-    print("[-] Path does not exist.")
-    sys.exit(1)
+    if os.name == "nt":
+        program_files = Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+        for executable in ("gswin64c.exe", "gswin32c.exe"):
+            matches = sorted((program_files / "gs").glob(f"gs*/bin/{executable}"))
+            if matches:
+                return str(matches[-1])
+    return None
 
 
-def process_pdf(file_path):
-    """Compresses a single PDF file efficiently using Ghostscript."""
-    print(f"[*] Processing file: {file_path}")
-
-    # Generate output path robustly using os.path
-    base, _ = os.path.splitext(file_path)
-    output_pdf = f"{base}.compressed.pdf"
-
-    cmd = [
-        'gs', '-sDEVICE=pdfwrite', '-dCompatibilityLevel=1.4',
-        '-dPDFSETTINGS=/ebook', '-dNOPAUSE', '-dBATCH',
-        f'-sOutputFile={output_pdf}', file_path
-    ]
-
-    try:
-        # Run quietly without flooding the Termux screen with GS logs
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        print(f"[+] Compressed successfully: {output_pdf}")
-    except subprocess.CalledProcessError as e:
-        print(f"[-] Error processing {file_path}: {e.stderr.decode().strip()}")
-
-
-def main():
-    # Execute metadata processing if osl module exists
-    if osl:
-        try:
-            spath = os.readlink(sys.argv[0]) if os.path.islink(sys.argv[0]) else sys.argv[0]
-            osl.osl(spath)
-            for message in getattr(osl, 'info', []):
-                print(f"{message}")
-        except Exception:
-            pass
-
-    path = get_input_path()
-
-    # Enforce dependency check only if we actually have valid inputs to process
-    check_dependencies()
-
-    if os.path.isfile(path):
-        if path.lower().endswith('.pdf'):
-            process_pdf(path)
+def install_ghostscript():
+    if os.name == "nt":
+        winget = shutil.which("winget")
+        chocolatey = shutil.which("choco")
+        if winget:
+            run_installer(
+                [
+                    winget, "install", "--id", "ArtifexSoftware.Ghostscript",
+                    "--exact", "--silent", "--accept-package-agreements",
+                    "--accept-source-agreements",
+                ],
+                "Ghostscript",
+            )
+        elif chocolatey:
+            run_installer([chocolatey, "install", "ghostscript", "-y"], "Ghostscript")
         else:
-            print("[-] The target file is not a PDF.")
-    elif os.path.isdir(path):
-        # Optimized traversal
-        for root, _, files in os.walk(path):
-            for file in files:
-                if file.lower().endswith('.pdf') and not file.endswith('.compressed.pdf'):
-                    process_pdf(os.path.join(root, file))
+            raise RuntimeError(
+                "Ghostscript is missing. Install it with winget or Chocolatey, "
+                "then retry."
+            )
+    elif sys.platform == "darwin":
+        brew = shutil.which("brew")
+        if not brew:
+            raise RuntimeError("Ghostscript is missing; install Homebrew, then retry.")
+        run_installer([brew, "install", "ghostscript"], "Ghostscript")
+    elif os.environ.get("TERMUX_VERSION") or "com.termux" in os.environ.get("PREFIX", ""):
+        pkg = shutil.which("pkg")
+        if not pkg:
+            raise RuntimeError(
+                "Ghostscript is missing and the Termux package manager was not found."
+            )
+        run_installer([pkg, "install", "ghostscript", "-y"], "Ghostscript")
     else:
-        print("[-] Invalid path sequence.")
-        sys.exit(1)
+        managers = (
+            ("apt-get", ["install", "-y", "ghostscript"]),
+            ("dnf", ["install", "-y", "ghostscript"]),
+            ("yum", ["install", "-y", "ghostscript"]),
+            ("pacman", ["-S", "--noconfirm", "ghostscript"]),
+            ("zypper", ["--non-interactive", "install", "ghostscript"]),
+            ("apk", ["add", "ghostscript"]),
+        )
+        manager = None
+        for name, arguments in managers:
+            command = shutil.which(name)
+            if command:
+                manager = (command, arguments)
+                break
+        if manager is None:
+            raise RuntimeError(
+                "Ghostscript is missing and no supported package manager was found. "
+                "Install Ghostscript manually, then retry."
+            )
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
+            raise RuntimeError(
+                "Ghostscript is missing. Automatic installation requires administrator "
+                "privileges; install it with your system package manager, then retry."
+            )
+        run_installer([manager[0], *manager[1]], "Ghostscript")
 
-    print(f"\n[+] Done! Execution time: {time.time() - START_TIME:.2f} seconds.")
+
+def ghostscript_command():
+    command = find_ghostscript()
+    if command is None:
+        install_ghostscript()
+        command = find_ghostscript()
+    if command is None:
+        raise RuntimeError(
+            "Ghostscript installation completed, but its executable was not found. "
+            "Restart the terminal or add Ghostscript to PATH, then retry."
+        )
+    return command
+
+
+def pdf_writer():
+    if importlib.util.find_spec("pypdf") is None:
+        run_installer(
+            [sys.executable, "-m", "pip", "install", "pypdf"],
+            "pypdf",
+        )
+        importlib.invalidate_caches()
+
+    try:
+        from pypdf import PdfWriter
+    except ImportError as error:
+        raise RuntimeError(
+            "pypdf installation completed, but it could not be imported. "
+            "Check the Python environment and retry."
+        ) from error
+    return PdfWriter
+
+
+def pdf_files(path, exclude_compressed=False):
+    source = Path(path).expanduser()
+    if source.is_file():
+        if source.suffix.lower() != ".pdf":
+            raise ValueError(f"Not a PDF file: {source}")
+        if exclude_compressed and source.name.lower().endswith(".compressed.pdf"):
+            return []
+        return [source.resolve()]
+    if not source.is_dir():
+        raise ValueError(f"Path does not exist: {source}")
+
+    return sorted(
+        (
+            file.resolve()
+            for file in source.rglob("*")
+            if file.is_file()
+            and file.suffix.lower() == ".pdf"
+            and (
+                not exclude_compressed
+                or not file.name.lower().endswith(".compressed.pdf")
+            )
+        ),
+        key=lambda file: str(file).casefold(),
+    )
+
+
+def compress_one(source, gs):
+    output = source.with_name(f"{source.stem}.compressed.pdf")
+    if output.exists():
+        print(f"Skipping; output already exists: {output}", file=sys.stderr)
+        return 1
+
+    command = [
+        gs,
+        "-sDEVICE=pdfwrite",
+        "-dCompatibilityLevel=1.4",
+        "-dPDFSETTINGS=/ebook",
+        "-dNOPAUSE",
+        "-dBATCH",
+        f"-sOutputFile={output}",
+        str(source),
+    ]
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+    except subprocess.CalledProcessError as error:
+        details = error.stderr.decode(errors="replace").strip()
+        print(f"Failed to compress '{source}': {details}", file=sys.stderr)
+        return 1
+    print(f"Compressed: {output}")
+    return 0
+
+
+def compress(path):
+    sources = pdf_files(path, exclude_compressed=True)
+    if not sources:
+        print(f"No PDFs found in: {path}")
+        return 1
+
+    gs = ghostscript_command()
+    failures = sum(compress_one(source, gs) != 0 for source in sources)
+    print(f"Compression complete: {len(sources) - failures}/{len(sources)} succeeded.")
+    return int(failures > 0)
+
+
+def merge(inputs, output, directory=None):
+    output_path = Path(output).expanduser().resolve()
+    if output_path.suffix.lower() != ".pdf":
+        raise ValueError(f"Output must have a .pdf extension: {output_path}")
+    if output_path.exists():
+        raise FileExistsError(f"Output already exists: {output_path}")
+
+    if inputs:
+        sources = []
+        for item in inputs:
+            path = Path(item).expanduser()
+            sources.extend(pdf_files(path))
+    else:
+        sources = pdf_files(directory or ".")
+
+    sources = sorted(
+        {source for source in sources if source != output_path},
+        key=lambda file: str(file).casefold(),
+    )
+    if not sources:
+        print("No PDF files found to merge.", file=sys.stderr)
+        return 1
+
+    PdfWriter = pdf_writer()
+    writer = PdfWriter()
+    try:
+        for source in sources:
+            print(f"Appending: {source}")
+            writer.append(str(source))
+        with output_path.open("xb") as output_file:
+            writer.write(output_file)
+    finally:
+        writer.close()
+
+    print(f"Merged {len(sources)} PDFs into: {output_path}")
+    return 0
+
+
+def interactive():
+    while True:
+        print("\nPDF tools")
+        print("1. Compress a PDF or directory")
+        print("2. Merge PDFs")
+        print("q. Quit")
+        choice = input("Choose an action: ").strip().lower()
+        if choice == "q":
+            return 0
+        try:
+            if choice == "1":
+                path = input("PDF file or directory: ").strip()
+                if not path:
+                    raise ValueError("A file or directory path is required.")
+                result = compress(path)
+            elif choice == "2":
+                directory = input("Directory containing PDFs: ").strip() or "."
+                output = input("Output PDF path [merged_output.pdf]: ").strip()
+                result = merge([], output or "merged_output.pdf", directory)
+            else:
+                print("Choose 1, 2, or q.")
+                continue
+            if result:
+                print(f"Operation failed (exit code {result}).", file=sys.stderr)
+        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as error:
+            print(error, file=sys.stderr)
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="action")
+
+    compress_parser = commands.add_parser(
+        "compress", help="Compress one PDF or all PDFs in a directory"
+    )
+    compress_parser.add_argument("path")
+
+    merge_parser = commands.add_parser("merge", help="Merge PDF files")
+    merge_parser.add_argument("inputs", nargs="*", help="PDF files or directories")
+    merge_parser.add_argument("-o", "--output", default="merged_output.pdf")
+    merge_parser.add_argument(
+        "-d", "--directory", help="Directory to scan when no inputs are given"
+    )
+    return parser
+
+
+def main(argv=None):
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] not in {"compress", "merge", "-h", "--help"}:
+        argv = ["compress", *argv]
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.action is None:
+        return interactive()
+
+    try:
+        if args.action == "compress":
+            return compress(args.path)
+        if args.action == "merge":
+            return merge(args.inputs, args.output, args.directory)
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as error:
+        print(error, file=sys.stderr)
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
