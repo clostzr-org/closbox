@@ -104,11 +104,11 @@ def find_tool(name):
 
 def main():
     source = Path(__file__).resolve().parent
-    backup_name = f"{source.name}-bak"
+    backup_name = os.path.basename(os.path.dirname(__file__))
     backup_dir = Path.home() / "bak" / backup_name
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    archive = backup_dir / f"hbak-{stamp}.zip"
+    archive = backup_dir / f"{backup_name}-{stamp}.zip"
     if archive.exists():
         raise FileExistsError(f"Backup already exists: {archive}")
 
@@ -134,7 +134,7 @@ def main():
     )
 
     older = sorted(
-        backup_dir.glob("hbak-*.zip"),
+        backup_dir.glob(f"{backup_name}-*.zip"),
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
