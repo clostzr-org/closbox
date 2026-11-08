@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Interactive FFmpeg helpers for cutting, looping, thumbnails, and volume.
+
+Run without arguments for interactive mode.
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+
+TIMESTAMP = re.compile(r"(?:\d+:[0-5]\d:[0-5]\d(?:\.\d+)?|\d+(?:\.\d+)?)\Z")
+COMPACT_TIMESTAMP = re.compile(r"\d{6}(?:\.\d+)?\Z")
+AUDIO_EXTENSIONS = {
+    ".aac", ".aif", ".aiff", ".alac", ".flac", ".m4a", ".mp3",
+    ".ogg", ".opus", ".wav", ".wma",
+}
+
+
+def existing_file(value):
+    path = Path(value).expanduser()
+    if not path.is_file():
+        raise ValueError(f"Not a file: {value}")
+    return path.resolve()
+
+
+def validate_timestamp(value):
+    if not TIMESTAMP.fullmatch(value):
+        raise ValueError("Time must be seconds or HH:MM:SS[.fraction].")
+    return value
+
+
+def cut(input_path, start=None, end=None):
+    source = existing_file(input_path)
+    if start is not None:
+        start = validate_timestamp(start)
+    if end is not None:
+        end = validate_timestamp(end)
+
+    start_label = start.replace(":", "") if start else "start"
+    end_label = end.replace(":", "") if end else "end"
+    output = source.with_name(
+        f"{source.stem}.{start_label}-{end_label}{source.suffix}"
+    )
+    command = ["ffmpeg", "-n", "-i", str(source)]
+    if start is not None:
+        command.extend(["-ss", start])
+    if end is not None:
+        command.extend(["-to", end])
+    command.append(str(output))
+    return subprocess.run(command, check=False).returncode
+
+
+def audio_duration(source):
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "json", str(source),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return float(json.loads(result.stdout)["format"]["duration"])
+
+
+def loop_audio(input_path):
+    source = existing_file(input_path)
+    try:
+        duration = audio_duration(source)
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError) as error:
+        print(f"Unable to read audio duration for '{source}': {error}", file=sys.stderr)
+        return 1
+
+    if duration > 60:
+        print(f"Skipping '{source}': duration exceeds 60 seconds.")
+        return 1
+
+    output = source.with_name(f"{source.stem}-60s{source.suffix}")
+    command = [
+        "ffmpeg", "-n", "-stream_loop", "-1", "-i", str(source),
+        "-t", "60", "-b:a", "256k", "-ar", "44100", str(output),
+    ]
+    return subprocess.run(command, check=False).returncode
+
+
+def loop_path(input_path):
+    path = Path(input_path).expanduser()
+    if path.is_file():
+        return loop_audio(path)
+    if not path.is_dir():
+        raise ValueError(f"Not a file or directory: {input_path}")
+
+    files = sorted(
+        file for file in path.rglob("*")
+        if file.is_file() and file.suffix.lower() in AUDIO_EXTENSIONS
+    )
+    if not files:
+        print(f"No supported audio files found in: {path}")
+        return 1
+
+    failures = 0
+    for file in files:
+        print(f"Processing: {file}")
+        try:
+            failures += loop_audio(file) != 0
+        except ValueError as error:
+            failures += 1
+            print(error, file=sys.stderr)
+    return int(failures > 0)
+
+
+def normalize_frame_time(value):
+    if COMPACT_TIMESTAMP.fullmatch(value):
+        return f"{value[:2]}:{value[2:4]}:{value[4:]}"
+    return validate_timestamp(value)
+
+
+def extract_frame(input_path, timestamp):
+    source = existing_file(input_path)
+    frame_time = normalize_frame_time(timestamp)
+    label = frame_time.replace(":", "").replace(".", "-")
+    output = source.with_name(f"{source.stem}-{label}.jpg")
+    command = [
+        "ffmpeg", "-n", "-ss", frame_time, "-i", str(source),
+        "-frames:v", "1", str(output),
+    ]
+    return subprocess.run(command, check=False).returncode
+
+
+def detect_volume(input_path):
+    source = existing_file(input_path)
+    command = [
+        "ffmpeg", "-i", str(source), "-filter:a", "volumedetect",
+        "-f", "null", os.devnull,
+    ]
+    return subprocess.run(command, check=False).returncode
+
+
+def prompt_path():
+    value = input("Input file or directory: ").strip()
+    if value.lower() == "t":
+        result = subprocess.run(
+            ["termux-clipboard-get"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        value = result.stdout.strip()
+    if not value:
+        raise ValueError("An input path is required.")
+    return value
+
+
+def interactive():
+    actions = {
+        "1": ("Cut a clip", lambda: cut(
+            prompt_path(),
+            input("Start time (blank for beginning): ").strip() or None,
+            input("End time (blank for end): ").strip() or None,
+        )),
+        "2": ("Loop audio to 60 seconds", lambda: loop_path(prompt_path())),
+        "3": ("Extract a video frame", lambda: extract_frame(
+            prompt_path(), input("Frame time (HH:MM:SS or HHMMSS): ").strip()
+        )),
+        "4": ("Detect audio volume", lambda: detect_volume(prompt_path())),
+    }
+
+    while True:
+        print("\nFFmpeg tools")
+        for key, (label, _) in actions.items():
+            print(f"{key}. {label}")
+        print("q. Quit")
+        choice = input("Choose an action: ").strip().lower()
+        if choice == "q":
+            return 0
+        if choice not in actions:
+            print("Choose 1, 2, 3, 4, or q.")
+            continue
+        try:
+            result = actions[choice][1]()
+            if result:
+                print(f"Operation failed (exit code {result}).", file=sys.stderr)
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            print(error, file=sys.stderr)
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="action")
+
+    cut_parser = commands.add_parser("cut", help="Cut a clip from a media file")
+    cut_parser.add_argument("input")
+    cut_parser.add_argument("--start", help="Start time (seconds or HH:MM:SS)")
+    cut_parser.add_argument("--end", help="End time (seconds or HH:MM:SS)")
+
+    loop_parser = commands.add_parser("loop", help="Loop audio to 60 seconds")
+    loop_parser.add_argument("input", help="Audio file or directory")
+
+    frame_parser = commands.add_parser("frame", help="Extract a video frame")
+    frame_parser.add_argument("input")
+    frame_parser.add_argument("time", help="Frame time (HH:MM:SS or HHMMSS)")
+
+    volume_parser = commands.add_parser("volume", help="Detect audio volume")
+    volume_parser.add_argument("input")
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.action is None:
+        return interactive()
+
+    try:
+        if args.action == "cut":
+            return cut(args.input, args.start, args.end)
+        if args.action == "loop":
+            return loop_path(args.input)
+        if args.action == "frame":
+            return extract_frame(args.input, args.time)
+        if args.action == "volume":
+            return detect_volume(args.input)
+    except (OSError, subprocess.SubprocessError, ValueError) as error:
+        print(error, file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
