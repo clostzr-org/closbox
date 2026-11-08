@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Replace spaces and unsupported characters in file and directory names."""
+
+import os
+import shutil
+import string
+import subprocess
+import sys
+from pathlib import Path
+
+
+ALLOWED = set(string.ascii_letters + string.digits + "_-[].+()")
+
+
+def sanitize(name):
+    return "".join("_" if char == " " else char for char in name if char == " " or char in ALLOWED)
+
+
+def rename(path):
+    path = Path(path).expanduser()
+    if not path.exists():
+        raise ValueError(f"Path does not exist: {path}")
+
+    changed = skipped = 0
+
+    def rename_entry(source):
+        nonlocal changed, skipped
+        name = sanitize(source.name)
+        if name == source.name:
+            return source
+        if not name:
+            print(f"Skipping empty sanitized name: {source}")
+            skipped += 1
+            return source
+        destination = source.with_name(name)
+        if destination.exists() or destination.is_symlink():
+            print(f"Skipping; destination exists: {destination}")
+            skipped += 1
+            return source
+        print(f"Renaming: {source} -> {destination}")
+        source.rename(destination)
+        changed += 1
+        return destination
+
+    def visit(directory):
+        for entry in sorted(directory.iterdir(), key=lambda item: item.name):
+            if entry.is_dir() and not entry.is_symlink():
+                visit(entry)
+            rename_entry(entry)
+
+    if path.is_dir() and not path.is_symlink():
+        visit(path)
+    else:
+        rename_entry(path)
+    print(f"Done. Renamed {changed} item(s); skipped {skipped}.")
+
+
+def main():
+    if len(sys.argv) > 2:
+        print(f"Usage: {Path(sys.argv[0]).name} [file-or-directory]", file=sys.stderr)
+        return 2
+
+    target = sys.argv[1] if len(sys.argv) == 2 else ""
+    if not target:
+        clipboard = shutil.which("termux-clipboard-get")
+        if clipboard:
+            try:
+                target = subprocess.run(
+                    [clipboard], check=True, capture_output=True, text=True
+                ).stdout.strip()
+            except (OSError, subprocess.SubprocessError) as error:
+                print(f"Clipboard unavailable: {error}", file=sys.stderr)
+        if not target:
+            target = input("Enter a file or directory path: ").strip()
+    try:
+        rename(target)
+    except (OSError, ValueError) as error:
+        print(error, file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

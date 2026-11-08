@@ -1,0 +1,236 @@
+#!/usr/bin/env python3
+"""Interactive rclone helpers for uploads, remote renaming, reconnect, and GUI."""
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+def install_rclone():
+    if os.name == "nt":
+        winget, choco = shutil.which("winget"), shutil.which("choco")
+        if winget:
+            command = [
+                winget, "install", "--id", "Rclone.Rclone", "--exact", "--silent",
+                "--accept-package-agreements", "--accept-source-agreements",
+            ]
+        elif choco:
+            command = [choco, "install", "rclone", "-y"]
+        else:
+            raise RuntimeError("rclone is missing; install it with winget or Chocolatey.")
+    elif "com.termux" in os.environ.get("PREFIX", "") or os.environ.get("TERMUX_VERSION"):
+        pkg = shutil.which("pkg")
+        if not pkg:
+            raise RuntimeError("rclone is missing and the Termux package manager was not found.")
+        command = [pkg, "install", "rclone", "-y"]
+    elif sys.platform == "darwin":
+        brew = shutil.which("brew")
+        if not brew:
+            raise RuntimeError("rclone is missing; install Homebrew, then retry.")
+        command = [brew, "install", "rclone"]
+    else:
+        managers = (
+            ("apt-get", ["install", "-y"]),
+            ("dnf", ["install", "-y"]),
+            ("yum", ["install", "-y"]),
+            ("pacman", ["-S", "--noconfirm"]),
+            ("zypper", ["--non-interactive", "install"]),
+            ("apk", ["add"]),
+        )
+        for name, arguments in managers:
+            manager = shutil.which(name)
+            if manager:
+                break
+        else:
+            raise RuntimeError("rclone is missing and no supported package manager was found.")
+        if hasattr(os, "geteuid") and os.geteuid() != 0:
+            raise RuntimeError("Installing rclone requires administrator privileges.")
+        command = [manager, *arguments, "rclone"]
+
+    print("Installing missing dependency: rclone")
+    try:
+        subprocess.run(command, check=True)
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise RuntimeError(f"Could not install rclone; install it manually. {error}") from error
+
+
+def rclone():
+    executable = shutil.which("rclone")
+    if not executable:
+        install_rclone()
+        executable = shutil.which("rclone")
+    if not executable:
+        raise RuntimeError("rclone was installed but is not on PATH; restart the terminal and retry.")
+    return executable
+
+
+def run(args, *, check=True):
+    return subprocess.run([rclone(), *map(str, args)], check=check)
+
+
+def remote_name(path):
+    return path.split(":", 1)[0] if ":" in path else None
+
+
+def reconnect(remote):
+    remote = remote.rstrip(":") + ":"
+    return run(["config", "reconnect", remote], check=False).returncode
+
+
+def upload(source, destination_prefix):
+    source_path = Path(source).expanduser()
+    if not source_path.is_file():
+        raise ValueError(f"Not a file: {source}")
+    destination = f"{destination_prefix.rstrip('/')}/{source_path.name}"
+    command = ["copyto", str(source_path.resolve()), destination, "-P"]
+    result = run(command, check=False)
+    remote = remote_name(destination)
+    if result.returncode and remote:
+        print(f"Transfer failed; reconnecting {remote}: and retrying.")
+        reconnect(remote)
+        result = run(command, check=False)
+    return result.returncode
+
+
+def upload_apk(source, folder=None):
+    if source == "t":
+        clipboard = shutil.which("termux-clipboard-get")
+        if not clipboard:
+            pkg = shutil.which("pkg") if (
+                "com.termux" in os.environ.get("PREFIX", "")
+                or os.environ.get("TERMUX_VERSION")
+            ) else None
+            if not pkg:
+                raise RuntimeError("Clipboard helper is missing; install Termux:API and termux-api.")
+            subprocess.run([pkg, "install", "termux-api", "-y"], check=True)
+            clipboard = shutil.which("termux-clipboard-get")
+        if not clipboard:
+            raise RuntimeError("termux-api installed, but termux-clipboard-get is still unavailable.")
+        source = subprocess.run(
+            [clipboard], check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    source_path = Path(source).expanduser()
+    if not source_path.is_file():
+        raise ValueError(f"Not a file: {source}")
+    if source_path.suffix.lower() != ".apk":
+        raise ValueError(f"Not an APK file: {source_path}")
+    destination = "gdsh:apk"
+    if folder:
+        destination += f"/{folder.strip('/')}"
+    else:
+        destination += f"/{source_path.parent.name or 'misc'}"
+    return run(["copy", str(source_path.resolve()), destination, "-P"]).returncode
+
+
+def normalize_remote(remote_path):
+    result = subprocess.run(
+        [rclone(), "lsf", remote_path], check=True, capture_output=True, text=True
+    )
+    names = result.stdout.splitlines()
+    for name in names:
+        clean_name = name.rstrip("/")
+        renamed = clean_name.replace(" ", "_")
+        if clean_name == renamed:
+            continue
+        source = f"{remote_path.rstrip('/')}/{clean_name}"
+        destination = f"{remote_path.rstrip('/')}/{renamed}"
+        print(f"Renaming: {source} -> {destination}")
+        run(["moveto", source, destination])
+
+    updated = subprocess.run(
+        [rclone(), "lsf", remote_path], check=True, capture_output=True, text=True
+    ).stdout.splitlines()
+    for index, name in enumerate(updated, 1):
+        print(f"{index:04d}: {name}")
+    return 0
+
+
+def web_gui():
+    return run(["rcd", "--rc-web-gui"], check=False).returncode
+
+
+def interactive():
+    options = {
+        "1": "Upload a file",
+        "2": "Upload an APK",
+        "3": "Replace spaces in remote names",
+        "4": "Reconnect a remote",
+        "5": "Open rclone web GUI",
+    }
+    while True:
+        print("\nrclone tools")
+        for key, label in options.items():
+            print(f"{key}. {label}")
+        print("q. Quit")
+        choice = input("Choose an action: ").strip().lower()
+        if choice == "q":
+            return 0
+        try:
+            if choice == "1":
+                source = input("Local file: ").strip()
+                destination = input("Remote destination directory (e.g. gdsh:folder): ").strip()
+                result = upload(source, destination)
+            elif choice == "2":
+                source = input("APK file: ").strip()
+                folder = input("Remote apk subfolder (blank for source folder): ").strip()
+                result = upload_apk(source, folder or None)
+            elif choice == "3":
+                result = normalize_remote(input("Remote directory (e.g. gdsh:folder): ").strip())
+            elif choice == "4":
+                result = reconnect(input("Remote name (e.g. gdsh): ").strip())
+            elif choice == "5":
+                result = web_gui()
+            else:
+                print("Choose 1-5 or q.")
+                continue
+            if result:
+                print(f"Operation failed (exit code {result}).", file=sys.stderr)
+        except (OSError, subprocess.SubprocessError, ValueError, RuntimeError) as error:
+            print(error, file=sys.stderr)
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest="action")
+    up = commands.add_parser("upload", help="Upload one file to a remote directory")
+    up.add_argument("source")
+    up.add_argument("destination")
+    apk = commands.add_parser("apk", help="Upload an APK to gdsh:apk")
+    apk.add_argument("source")
+    apk.add_argument("folder", nargs="?")
+    norm = commands.add_parser("normalize", help="Replace spaces in remote names")
+    norm.add_argument("remote")
+    rec = commands.add_parser("reconnect", help="Reconnect a configured remote")
+    rec.add_argument("remote", nargs="?", default="gdny:")
+    commands.add_parser("web", help="Start rclone's web GUI")
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.action is None:
+        return interactive()
+    try:
+        if args.action == "upload":
+            return upload(args.source, args.destination)
+        if args.action == "apk":
+            return upload_apk(args.source, args.folder)
+        if args.action == "normalize":
+            return normalize_remote(args.remote)
+        if args.action == "reconnect":
+            return reconnect(args.remote)
+        if args.action == "web":
+            return web_gui()
+    except (OSError, subprocess.SubprocessError, ValueError, RuntimeError) as error:
+        print(error, file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
