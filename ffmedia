@@ -141,6 +141,31 @@ def detect_volume(input_path):
     return subprocess.run(command, check=False).returncode
 
 
+def normalize_audio(input_path, output_path=None):
+    source = existing_file(input_path)
+    output = (
+        Path(output_path).expanduser().resolve()
+        if output_path
+        else source.with_name(f"{source.stem}-vlp{source.suffix}")
+    )
+    if source == output:
+        raise ValueError("Output path must differ from input path.")
+    if output.exists():
+        raise ValueError(f"Output already exists; refusing to overwrite: {output}")
+
+    command = [
+        "ffmpeg", "-hide_banner", "-i", str(source),
+        "-map", "0", "-map_metadata", "0",
+        "-c:v", "copy", "-c:s", "copy", "-c:d", "copy", "-c:t", "copy",
+        "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+        "-n", str(output),
+    ]
+    result = subprocess.run(command, check=False)
+    if result.returncode == 0:
+        print(f"Normalized audio saved to: {output}")
+    return result.returncode
+
+
 def prompt_path():
     value = input("Input file or directory: ").strip()
     if value.lower() == "t":
@@ -168,6 +193,7 @@ def interactive():
             prompt_path(), input("Frame time (HH:MM:SS or HHMMSS): ").strip()
         )),
         "4": ("Detect audio volume", lambda: detect_volume(prompt_path())),
+        "5": ("Increase audio loudness safely", lambda: normalize_audio(prompt_path())),
     }
 
     while True:
@@ -179,7 +205,7 @@ def interactive():
         if choice == "q":
             return 0
         if choice not in actions:
-            print("Choose 1, 2, 3, 4, or q.")
+            print("Choose 1, 2, 3, 4, 5, or q.")
             continue
         try:
             result = actions[choice][1]()
@@ -207,6 +233,14 @@ def build_parser():
 
     volume_parser = commands.add_parser("volume", help="Detect audio volume")
     volume_parser.add_argument("input")
+
+    normalize_parser = commands.add_parser(
+        "normalize", help="Increase perceived loudness and limit true peaks"
+    )
+    normalize_parser.add_argument("input", nargs="?", help="Input media/audio file")
+    normalize_parser.add_argument(
+        "-o", "--output", help="Output path (default: <input-name>-vlp.<extension>)"
+    )
     return parser
 
 
@@ -225,6 +259,11 @@ def main(argv=None):
             return extract_frame(args.input, args.time)
         if args.action == "volume":
             return detect_volume(args.input)
+        if args.action == "normalize":
+            input_path = args.input or input("Input file: ").strip().strip('"')
+            if not input_path:
+                raise ValueError("An input file is required.")
+            return normalize_audio(input_path, args.output)
     except (OSError, subprocess.SubprocessError, ValueError) as error:
         print(error, file=sys.stderr)
         return 1

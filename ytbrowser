@@ -238,6 +238,127 @@ def select_interactively(entries):
             print(error)
 
 
+def available_audio_formats():
+    """Return yt-dlp audio conversions supported by the installed FFmpeg."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        return []
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    encoder_names = set(
+        re.findall(r"^\s*[A-Z.]{6}\s+(\S+)", result.stdout + result.stderr, re.MULTILINE)
+    )
+    supported = []
+    checks = (
+        ("mp3", {"libmp3lame", "mp3"}),
+        ("m4a", {"aac"}),
+        ("flac", {"flac"}),
+        ("opus", {"libopus", "opus"}),
+        ("vorbis", {"libvorbis", "vorbis"}),
+        ("wav", {"pcm_s16le"}),
+        ("alac", {"alac"}),
+    )
+    for audio_format, markers in checks:
+        if encoder_names & markers:
+            supported.append(audio_format)
+    return supported
+
+
+def prompt_yes_no(prompt, default=False):
+    hint = "Y/n" if default else "y/N"
+    while True:
+        answer = input(f"{prompt} [{hint}]: ").strip().lower()
+        if not answer:
+            return default
+        if answer in {"y", "yes"}:
+            return True
+        if answer in {"n", "no"}:
+            return False
+        print("Please answer y or n.")
+
+
+def configure_interactively(args):
+    args.audio = prompt_yes_no("Download audio only (an audio album for playlists)?")
+    print(f"Selected: {'audio only' if args.audio else 'video'}")
+
+    if args.audio:
+        formats = available_audio_formats()
+        if not formats:
+            formats = ["mp3", "m4a", "flac", "opus", "wav"]
+            print(
+                "FFmpeg is not available yet; these common output formats "
+                "will be offered, and FFmpeg will be required to execute."
+            )
+        if args.audio_format not in formats:
+            args.audio_format = formats[0]
+        print(f"Available output formats: {', '.join(formats)}")
+        while True:
+            value = input(f"Output format [{args.audio_format}]: ").strip().lower()
+            if not value:
+                value = args.audio_format
+            if value in formats:
+                args.audio_format = value
+                break
+            print(f"Choose one of: {', '.join(formats)}")
+        print(f"Selected output format: {args.audio_format}")
+
+    while True:
+        value = input("Maximum file size (e.g. 16M; blank for no limit): ").strip()
+        if not value:
+            args.max_filesize = None
+            break
+        if SIZE_LIMIT_RE.fullmatch(value):
+            args.max_filesize = value
+            break
+        print("Enter a size such as 16M or 1.5G, or leave blank for no limit.")
+    print(f"Selected maximum file size: {args.max_filesize or 'no limit'}")
+
+    while True:
+        value = input("Maximum duration (seconds or HH:MM:SS; blank for no limit): ").strip()
+        if not value:
+            args.max_duration = None
+            break
+        try:
+            args.max_duration = duration_seconds(value)
+            break
+        except ValueError as error:
+            print(error)
+    print(
+        "Selected maximum duration: "
+        f"{format_duration(args.max_duration) if args.max_duration is not None else 'no limit'}"
+    )
+
+
+def duration_seconds(value):
+    parts = value.split(":")
+    if len(parts) == 1 and parts[0].isdigit():
+        seconds = int(parts[0])
+    elif len(parts) == 3 and all(part.isdigit() for part in parts):
+        hours, minutes, remainder = map(int, parts)
+        if minutes > 59 or remainder > 59:
+            raise ValueError("Duration must use seconds or HH:MM:SS.")
+        seconds = hours * 3600 + minutes * 60 + remainder
+    else:
+        raise ValueError("Duration must use seconds or HH:MM:SS.")
+    if seconds <= 0:
+        raise ValueError("Maximum duration must be greater than zero.")
+    return seconds
+
+
+def format_duration(seconds):
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02}:{minutes:02}:{seconds:02}"
+
+
 def transform_title(title, mode, language):
     if mode == "transliterate":
         try:
@@ -300,6 +421,8 @@ def download_arguments(args, output_template, url):
         command.extend(["--extract-audio", "--audio-format", args.audio_format, "--format", "bestaudio/best"])
     if args.max_filesize:
         command.extend(["--max-filesize", args.max_filesize])
+    if args.max_duration:
+        command.extend(["--match-filter", f"duration <= {args.max_duration}"])
     if args.geo_bypass:
         command.append("--geo-bypass")
         if args.geo_country:
@@ -365,7 +488,7 @@ def main(argv=None):
     selection.add_argument(
         "--interactive",
         action="store_true",
-        help="List playlist entries and select interactively",
+        help="Configure download options, select entries, preview, and confirm",
     )
     parser.add_argument(
         "--geo-bypass",
@@ -390,8 +513,11 @@ def main(argv=None):
 
     if args.max_filesize and not SIZE_LIMIT_RE.fullmatch(args.max_filesize):
         parser.error("--max-filesize must look like 16M or 1.5G")
+    args.max_duration = None
     if args.geo_country and not args.geo_bypass:
         parser.error("--geo-country requires --geo-bypass")
+    if args.interactive:
+        configure_interactively(args)
     try:
         ensure_dependencies(args)
     except RuntimeError as error:
@@ -443,6 +569,25 @@ def main(argv=None):
         if not indexes:
             print("No videos selected.")
             return 0
+
+        if args.interactive:
+            print("\nDownload preview")
+            print(f"URL: {args.url}")
+            print(f"Output directory: {output_dir}")
+            print(f"Download mode: {'audio only' if args.audio else 'video'}")
+            if args.audio:
+                print(f"Output audio format: {args.audio_format}")
+            print(f"Maximum file size: {args.max_filesize or 'no limit'}")
+            print(
+                "Maximum duration: "
+                f"{format_duration(args.max_duration) if args.max_duration is not None else 'no limit'}"
+            )
+            print("Selected entries:")
+            for index in indexes:
+                print(f"  {index + 1}. {entries[index]['title']}")
+            if not prompt_yes_no("Execute this download now?"):
+                print("Download cancelled; no download was started.")
+                return 0
 
         playlist_dir = output_dir / SAFE_TITLE_RE.sub("_", playlist_title).strip(" ._-")
         if len(entries) > 1:
