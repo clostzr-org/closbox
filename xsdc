@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+for d in $(df -h | awk '$NF ~ /^\/storage\// && $NF ~ /-/ {print $NF}'); do
+  echo "$d"
+  break
+done

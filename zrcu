@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+import os, subprocess, sys
+
+home = os.path.expanduser('~')
+zrc = os.path.join(home, '.zshrc')
+
+if input('Update .zshrc configuration? (y/n): ').strip().lower() != 'y':
+    raise SystemExit('Operation cancelled.')
+
+print('Verifying baseline framework environment...')
+for cmd in ('apt update && apt upgrade -y', 'pip install colorama', 'apt install micro -y'):
+    subprocess.run(cmd, shell=True, check=False)
+
+if not os.path.isfile(zrc):
+    raise SystemExit(f"Configuration profile '{zrc}' missing.")
+
+with open(zrc, 'r', encoding='utf-8') as f:
+    lines = f.readlines()
+
+idx = next((i for i, line in enumerate(lines, 1) if '# alias ohmyzsh' in line), None)
+if idx is None:
+    raise SystemExit("Required marker '# alias ohmyzsh' not found. Cancelled patch generation.")
+
+extra = '''
+# EXTRA LINES GENERATED AUTOMATICALLY
+# System Paths Optimization
+for d in ~/.local/bin ~/bin ~/closbox ~/closbox/_*(N/); do
+    if [[ $d:t != "__pycache__" ]]; then
+        path+=("$d")
+    fi
+done
+
+print -r "path_list:start"
+print -l $path
+print -r "path_list:end"
+
+alias micro='micro -clipboard internal'
+export SSH_AUTH_SOCK=$PREFIX/var/run/ssh-agent.socket
+sv status ssh-agent
+cd ~/closbox
+'''
+
+with open(zrc, 'w', encoding='utf-8') as f:
+    f.writelines(lines[:idx])
+    f.write('\n' + extra)
+
+print(f'Update completed successfully:\n{extra}')

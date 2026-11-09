@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""Japanese transliteration and rename helper.
+
+This script combines the previous standalone behaviors into a single tool:
+- convert Japanese text to Kunrei-shiki Romanji
+- optionally translate to English
+- rename a file or directory tree using Romanji + English suffix
+
+Examples:
+  python romanji --text "こんにちは"
+  python romanji --rename "./日本語フォルダ"
+  python romanji "./folder"
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+from typing import Optional
+
+try:
+    import pykakasi
+except Exception as exc:  # pragma: no cover - dependency check is runtime-driven
+    pykakasi = None
+    _PYKAKASI_ERROR = exc
+else:
+    _PYKAKASI_ERROR = None
+
+
+def setup_converter():
+    """Return a pykakasi converter configured for Kunrei-shiki Romaji."""
+    if pykakasi is None:
+        raise RuntimeError(
+            "pykakasi is not installed. Install it with: pip install pykakasi"
+        )
+    converter = pykakasi.kakasi()
+    converter.setMode("H", "a")
+    converter.setMode("K", "a")
+    converter.setMode("J", "a")
+    converter.setMode("r", "Kunrei")
+    return converter.getConverter()
+
+
+def romanize_text(text: str) -> str:
+    """Convert Japanese text to Kunrei Romanji."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+    try:
+        converter = setup_converter()
+        return converter.do(cleaned)
+    except RuntimeError:
+        raise
+    except Exception:
+        return cleaned
+
+
+def translate_text(text: str) -> str:
+    """Best-effort English translation using translate-shell or googletrans."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+
+    try:
+        result = subprocess.run(
+            ["trans", "-brief", "-to", "en", "-no-warn", cleaned],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        translated = result.stdout.strip()
+        if result.returncode == 0 and translated and not result.stderr.strip():
+            return translated
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    try:
+        from googletrans import Translator
+
+        translated = Translator().translate(cleaned, dest="en").text
+        if translated and translated.strip():
+            return translated.strip()
+    except Exception:
+        pass
+
+    return ""
+
+
+def clean_string(text: str) -> str:
+    """Replace unsafe filename characters with underscores."""
+    sanitized = (text or "").replace(" ", "_")
+    sanitized = re.sub(r"[/\\:*?\"<>|]+", "_", sanitized)
+    return sanitized
+
+
+def build_renamed_name(filename: str) -> str:
+    """Generate a Romanji + English based filename."""
+    name, ext = os.path.splitext(filename)
+    romanji_part = romanize_text(name)
+    english_part = translate_text(name)
+
+    if english_part and english_part.lower() != name.lower():
+        combined_name = f"{romanji_part}_-_{english_part}"
+    elif romanji_part:
+        combined_name = romanji_part
+    else:
+        combined_name = name
+
+    return clean_string(combined_name) + ext
+
+
+def rename_file(file_path: str) -> bool:
+    """Rename a file or directory path if needed and return True when renamed."""
+    dir_name = os.path.dirname(file_path)
+    base_name = os.path.basename(file_path)
+    new_base_name = build_renamed_name(base_name)
+
+    if base_name == new_base_name:
+        print(f"[SKIPPED] {base_name}")
+        return False
+
+    new_path = os.path.join(dir_name, new_base_name)
+    try:
+        os.rename(file_path, new_path)
+        print(f"[SUCCESS] {base_name} -> {new_base_name}")
+        return True
+    except Exception as exc:  # pragma: no cover - environment-dependent
+        print(f"[ERROR] Could not rename {base_name}: {exc}", file=sys.stderr)
+        return False
+
+
+def rename_directory_recursive(dir_path: str) -> None:
+    """Recursively rename files and subdirectories under a root directory."""
+    if not os.path.exists(dir_path):
+        print(f"[ERROR] Directory does not exist: {dir_path}", file=sys.stderr)
+        return
+
+    for root, dirs, files in os.walk(dir_path, topdown=False):
+        for file_name in files:
+            full_path = os.path.join(root, file_name)
+            rename_file(full_path)
+
+        for dir_name in dirs:
+            full_path = os.path.join(root, dir_name)
+            rename_file(full_path)
+
+
+def output_text_result(text: str, include_translation: bool = True) -> None:
+    """Print transliteration and optional English translation for a Japanese string."""
+    romanji = romanize_text(text)
+    print(f"Japanese: {text}")
+    print(f"Romanji:  {romanji}")
+    if include_translation:
+        english = translate_text(text)
+        print(f"English:  {english or '(translation unavailable)'}")
+
+
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Convert Japanese text to Romanji and optionally rename files/directories."
+    )
+    parser.add_argument("path", nargs="?", help="Target file or directory to rename")
+    parser.add_argument("--text", help="Japanese text to transliterate")
+    parser.add_argument(
+        "--rename",
+        dest="rename_target",
+        help="Path to a file or directory to rename using Kunrei Romanji + English suffix",
+    )
+    parser.add_argument(
+        "--no-translate",
+        action="store_true",
+        help="Skip the English translation when printing text output",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    args = parse_args(argv)
+
+    if args.text:
+        output_text_result(args.text, include_translation=not args.no_translate)
+        return 0
+
+    target_path = args.rename_target or args.path
+    if target_path:
+        target = os.path.abspath(target_path)
+        if not os.path.exists(target):
+            print(f"[ERROR] Path does not exist: {target}", file=sys.stderr)
+            return 1
+
+        if os.path.isfile(target):
+            rename_file(target)
+            return 0
+
+        if os.path.isdir(target):
+            rename_directory_recursive(target)
+            return 0
+
+        print(f"[ERROR] Unsupported target type: {target}", file=sys.stderr)
+        return 1
+
+    prompt = input("Japanese text: ").strip()
+    if not prompt:
+        print("No input supplied.", file=sys.stderr)
+        return 1
+    output_text_result(prompt)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except RuntimeError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        raise SystemExit(1)
+
