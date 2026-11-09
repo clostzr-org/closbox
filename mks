@@ -62,7 +62,7 @@ import os, sys
 start_time = time.time()
 home  = os.path.expanduser('~')
 hcwd  = os.path.join(home, os.path.basename(os.path.dirname(__file__)))
-if hcwd not in sys.path:
+if  hcwd not in sys.path:
     sys.path.append(hcwd)
 
 spath = os.readlink(sys.argv[0]) if os.path.islink(sys.argv[0]) else os.path.abspath(sys.argv[0])
@@ -71,42 +71,18 @@ sbn   = os.path.basename(spath)
 sne   = os.path.splitext(sbn)[0]
 verbose = False
 
-args  = sys.argv[1:]
-jargs = ' '.join(args).strip()
-
-def usg():
-    import inspect
-    usg_text = inspect.cleandoc(f'''
-    alias: 
- function: 
-    usage: {{sbn}} [argument]
-    ''')
-    print(usg_text)
-
-if __name__ == '__main__':
-    if len(sys.argv) > 1 and sys.argv[1] == '-h':
-        usg()
-        sys.exit()
-
-    # insert_your_codes_here
-
-    print(f"Elapsed time: {{time.time() - start_time}} seconds")
+print(f"Elapsed time: {{time.time() - start_time}} seconds")
 """
 
 def hdsh(src_file, ext):
     return f"""#!/usr/bin/env bash
-
-bnz=$(basename $0)
-if [[ "${{bnz##*.}}" == "{ext.strip('.')}" ]]; then
-    echo -e "source-file : {src_file}"
-fi
-
 echo -e "usage: $(basename $0) [command]"
 """
 
 def create_script(bname, ext):
     clean_base = bname.strip().replace(' ', '_')
-    src_file = os.path.join(hcwd, f"{clean_base}{ext}")
+    actual_ext = '' if ext in ('.py', '.sh') else ext
+    src_file = os.path.join(hcwd, f"{clean_base}{actual_ext}")
 
     match ext:
         case '.py':
@@ -120,54 +96,143 @@ def create_script(bname, ext):
 
     os.makedirs(hcwd, exist_ok=True)
 
-    if not os.path.isfile(src_file):
-        with open(src_file, 'w') as f:
+    try:
+        with open(src_file, 'x') as f:
             f.write(header + '\n')
-    
+    except FileExistsError:
+        raise FileExistsError(f"Refusing to overwrite existing file: {os.path.abspath(src_file)}")
+
     os.chmod(src_file, 0o755)
 
     print_box("Script Created", f"Language: {lang}\nPath: {src_file}")
-    
+
     editor = ensure_micro()
     subprocess.run([editor, src_file])
 
+
+def target_filename(bname, ext):
+    actual_ext = '' if ext in ('.py', '.sh') else ext
+    return f"{bname.strip().replace(' ', '_')}{actual_ext}"
+
+
+def checked_name(bname, ext):
+    """Resolve PATH conflicts interactively and never overwrite an existing file."""
+    while True:
+        if ext and bname.lower().endswith(ext):
+            bname = bname[:-len(ext)]
+
+        if not bname or bname in {'.', '..'} or os.path.basename(bname) != bname:
+            print(f"{C['red']}Enter a filename only (no directory path).{C['reset']}")
+            bname = input('New filename (or q to cancel): ').strip()
+            if bname.lower() in {'q', 'quit'}:
+                return None
+            continue
+
+        filename = target_filename(bname, ext)
+        destination = os.path.abspath(os.path.join(hcwd, filename))
+        existing_path = shutil.which(filename)
+
+        if existing_path:
+            existing_path = os.path.realpath(existing_path)
+            print(f"{C['yellow']}Warning: '{filename}' already exists in PATH:{C['reset']}")
+            print(f"  {existing_path}")
+            if os.path.normcase(existing_path) == os.path.normcase(destination):
+                print(f"{C['red']}That is the output path; refusing to overwrite it.{C['reset']}")
+                choice = 'n'
+            else:
+                choice = input("Keep this name anyway, choose a new name, or quit? [i/n/q]: ").strip().lower()
+                if choice in {'i', 'insist'}:
+                    return bname
+                if choice in {'q', 'quit'}:
+                    return None
+                if choice not in {'n', 'new'}:
+                    print("Please choose i, n, or q.")
+                    continue
+        elif not os.path.lexists(destination):
+            return bname
+        else:
+            print(f"{C['yellow']}Warning: a file already exists at the output path:{C['reset']}")
+            print(f"  {destination}")
+
+        bname = input('New filename (or q to cancel): ').strip()
+        if bname.lower() in {'q', 'quit'}:
+            return None
+
+
+def normalize_ext(value):
+    value = value.strip().lower()
+    aliases = {
+        'py': '.py',
+        'python': '.py',
+        '.py': '.py',
+        'sh': '.sh',
+        'bash': '.sh',
+        'shell': '.sh',
+        '.sh': '.sh',
+        'txt': '.txt',
+        'text': '.txt',
+        '.txt': '.txt',
+    }
+    return aliases.get(value, '.txt')
+
+
+def resolve_script_target(params):
+    ext = '.txt'
+    bname = None
+
+    for p in params:
+        if p.startswith('.') or p.lower() in {'py', 'python', 'sh', 'bash', 'shell', 'txt', 'text'}:
+            ext = normalize_ext(p)
+            continue
+        if bname is None:
+            bname = p
+
+    if bname is None:
+        return None, ext
+
+    if '.' in bname and not bname.startswith('.'):
+        base, parsed_ext = os.path.splitext(bname)
+        if parsed_ext:
+            ext = normalize_ext(parsed_ext)
+            bname = base
+
+    return bname, ext
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Make a script with environment presets", add_help=False)
-    parser.add_argument('params', nargs='*', help="Filename or extension")
+    parser.add_argument('params', nargs='*', help="Script type and filename")
     parser.add_argument('-h', '--help', action='store_true')
-    
+
     args = parser.parse_args()
 
     if args.help:
-        print_box("Usage", f"mks.py [-py|-sh] [filename]\nExample: mks.py .py myscript")
+        print_box("Usage", "mks.py [py|sh|txt] [filename]\nExamples:\n  mks.py py hello\n  mks.py .sh hello\n  mks.py hello.py")
         sys.exit()
 
     if not args.params:
         print(f"{C['red']}Error: No filename or extension provided.{C['reset']}")
         sys.exit(1)
 
-    # Resolve extension and basename
-    ext = '.txt'
-    bname = None
-
-    for p in args.params:
-        if p.startswith('.'):
-            ext = p.lower()
-        else:
-            bname = p
+    bname, ext = resolve_script_target(args.params)
 
     if not bname:
         print(f"{C['red']}Error: Basename is required.{C['reset']}")
         sys.exit(1)
 
-    if '.' in bname:
-        bname, parsed_ext = os.path.splitext(bname)
-        ext = parsed_ext if parsed_ext.startswith('.') else f".{parsed_ext}"
+    bname = checked_name(bname, ext)
+    if bname is None:
+        print('Cancelled.')
+        sys.exit(0)
 
-    print(f"{C['blue']}Proposed file: {C['bold']}{bname}{ext}{C['reset']}")
+    display_name = target_filename(bname, ext)
+    print(f"{C['blue']}Proposed file: {C['bold']}{display_name}{C['reset']}")
     cnfrm = input(f"Create this file? (y/n): ").strip().lower()
-    
+
     if cnfrm == 'y':
-        create_script(bname, ext)
-    
+        try:
+            create_script(bname, ext)
+        except FileExistsError as e:
+            print(f"{C['red']}{e}{C['reset']}")
+
     print(f"\n{C['green']}Total Execution Time: {time.time() - start_time:.4f}s{C['reset']}")

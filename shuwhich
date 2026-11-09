@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+import os, shutil, subprocess, sys
+
+
+def swhich(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+def ensure(name: str) -> bool:
+    if swhich(name):
+        print(f"{name} is installed: {shutil.which(name)}")
+        return True
+    print(f"{name} is not installed or not in PATH.")
+    subprocess.run(['apt', 'install', name, '-y'], check=False)
+    return swhich(name)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print(f'Usage: {os.path.basename(sys.argv[0])} <program-name>')
+        raise SystemExit(1)
+
+    name = sys.argv[1]
+    if name in ('-h', '--help'):
+        print(f'Usage: {os.path.basename(sys.argv[0])} <program-name>')
+        raise SystemExit(0)
+
+    if len(sys.argv) > 2 and sys.argv[2].lower() in {'install', '--install', '-i'}:
+        print(f"Result: {'installed' if ensure(name) else 'not installed'}")
+    else:
+        print(f"The '{name}' command is installed." if swhich(name) else f"The '{name}' command is not installed.")
+
