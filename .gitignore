@@ -39,5 +39,6 @@ npm-debug.log*
 .project_root
 
 # clostzr-list
+_*
 _cr/
 _rclone/
