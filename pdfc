@@ -157,15 +157,7 @@ def pdf_files(path, exclude_compressed=False):
     )
 
 
-COMPRESSION_LEVELS = ("screen", "ebook", "printer", "prepress")
-
-
-def compress_one(source, gs, level="ebook"):
-    if level not in COMPRESSION_LEVELS:
-        raise ValueError(
-            f"Unknown compression level: {level}. "
-            f"Choose one of: {', '.join(COMPRESSION_LEVELS)}."
-        )
+def compress_one(source, gs):
     output = source.with_name(f"{source.stem}.compressed.pdf")
     if output.exists():
         print(f"Skipping; output already exists: {output}", file=sys.stderr)
@@ -175,7 +167,7 @@ def compress_one(source, gs, level="ebook"):
         gs,
         "-sDEVICE=pdfwrite",
         "-dCompatibilityLevel=1.4",
-        f"-dPDFSETTINGS=/{level}",
+        "-dPDFSETTINGS=/ebook",
         "-dNOPAUSE",
         "-dBATCH",
         f"-sOutputFile={output}",
@@ -196,20 +188,50 @@ def compress_one(source, gs, level="ebook"):
     return 0
 
 
-def compress(path, level="ebook"):
+def compress(path):
     sources = pdf_files(path, exclude_compressed=True)
     if not sources:
         print(f"No PDFs found in: {path}")
         return 1
 
     gs = ghostscript_command()
-    failures = sum(compress_one(source, gs, level) != 0 for source in sources)
+    failures = sum(compress_one(source, gs) != 0 for source in sources)
     print(f"Compression complete: {len(sources) - failures}/{len(sources)} succeeded.")
     return int(failures > 0)
 
 
+def merge_output_path(output, inputs, directory):
+    """Resolve where the merged PDF is written.
+
+    A bare filename (no directory component, e.g. the default
+    "merged_output.pdf") follows the source files: it is placed inside the
+    scanned --directory, or, when explicit files are passed, inside their
+    common parent directory. Any output value that includes a directory
+    component (relative or absolute) is honored as-is.
+    """
+    expanded = Path(output).expanduser()
+    bare_name = expanded.parent == Path(".")
+    if not bare_name:
+        return expanded.resolve()
+    if directory:
+        candidate = Path(directory).expanduser()
+        if candidate.is_dir():
+            return (candidate.resolve() / expanded.name).resolve()
+    elif inputs:
+        parents = set()
+        for item in inputs:
+            item_path = Path(item).expanduser()
+            if not item_path.is_file():
+                parents = set()
+                break
+            parents.add(item_path.resolve().parent)
+        if len(parents) == 1:
+            return (next(iter(parents)) / expanded.name).resolve()
+    return expanded.resolve()
+
+
 def merge(inputs, output, directory=None):
-    output_path = Path(output).expanduser().resolve()
+    output_path = merge_output_path(output, inputs, directory)
     if output_path.suffix.lower() != ".pdf":
         raise ValueError(f"Output must have a .pdf extension: {output_path}")
     if output_path.exists():
@@ -260,15 +282,7 @@ def interactive():
                 path = input("PDF file or directory: ").strip()
                 if not path:
                     raise ValueError("A file or directory path is required.")
-                print("\nCompression levels:")
-                print("  1. screen   - smallest file, lowest quality (72 DPI)")
-                print("  2. ebook    - balanced (150 DPI, default)")
-                print("  3. printer  - high quality (300 DPI)")
-                print("  4. prepress - highest quality, color-preserving (300 DPI)")
-                level_choice = input("Choose level [1-4, default=2]: ").strip() or "2"
-                level_map = {"1": "screen", "2": "ebook", "3": "printer", "4": "prepress"}
-                level = level_map.get(level_choice, "ebook")
-                result = compress(path, level)
+                result = compress(path)
             elif choice == "2":
                 directory = input("Directory containing PDFs: ").strip() or "."
                 output = input("Output PDF path [merged_output.pdf]: ").strip()
@@ -290,20 +304,13 @@ def build_parser():
         "compress", help="Compress one PDF or all PDFs in a directory"
     )
     compress_parser.add_argument("path")
-    compress_parser.add_argument(
-        "-l", "--level",
-        choices=COMPRESSION_LEVELS,
-        default="ebook",
-        help="Compression level (default: ebook). "
-             "screen=smallest file, lowest quality (72 DPI); "
-             "ebook=balanced (150 DPI); "
-             "printer=high quality (300 DPI); "
-             "prepress=highest quality, color-preserving (300 DPI).",
-    )
 
     merge_parser = commands.add_parser("merge", help="Merge PDF files")
     merge_parser.add_argument("inputs", nargs="*", help="PDF files or directories")
-    merge_parser.add_argument("-o", "--output", default="merged_output.pdf")
+    merge_parser.add_argument(
+        "-o", "--output", default="merged_output.pdf",
+        help="Output PDF path; a bare filename is placed next to the source files",
+    )
     merge_parser.add_argument(
         "-d", "--directory", help="Directory to scan when no inputs are given"
     )
@@ -322,7 +329,7 @@ def main(argv=None):
 
     try:
         if args.action == "compress":
-            return compress(args.path, args.level)
+            return compress(args.path)
         if args.action == "merge":
             return merge(args.inputs, args.output, args.directory)
     except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as error:
